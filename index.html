@@ -1,0 +1,933 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SpokeX Wheel Builder — POC</title>
+<style>
+  :root { --panel:#fff; --ink:#1c1c1c; --line:#d9d9d9; --accent:#1e66ff; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; }
+  body {
+    font:14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color:var(--ink); background:#ececec; display:flex; flex-direction:column; min-height:100%;
+  }
+
+  header.bar {
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    padding:11px 18px; background:var(--panel); border-bottom:1px solid var(--line);
+  }
+  header.bar h1 { font-size:15px; margin:0; font-weight:700; letter-spacing:.2px; white-space:nowrap; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg button { appearance:none; border:0; background:#fff; padding:7px 13px; font:inherit; cursor:pointer; color:#555; }
+  .seg button.active { background:var(--ink); color:#fff; }
+  .btn { appearance:none; border:1px solid var(--line); background:#fff; border-radius:8px; padding:7px 13px; font:inherit; cursor:pointer; }
+  .btn:hover { background:#f5f5f5; }
+  .hint { color:#777; font-size:12.5px; flex:1 1 260px; min-width:220px; }
+
+  main { flex:1; display:flex; align-items:center; justify-content:center; padding:18px; }
+  #stageWrap { position:relative; width:min(92vw, 72vh); aspect-ratio:1/1; }
+  #stage2d, #stage3d {
+    position:absolute; inset:0; border-radius:12px; overflow:hidden; background:#fff;
+    box-shadow:0 2px 12px rgba(0,0,0,.14), inset 0 0 0 1px rgba(0,0,0,.06);
+    transition:background-color .15s ease;
+  }
+  #stage3d { touch-action:none; }
+  #wheel2d { width:100%; height:100%; display:block; }
+  [hidden] { display:none !important; }
+
+  .spoke-hit, .hit { stroke:transparent; stroke-width:26; cursor:pointer; pointer-events:stroke; }
+  .selglow { animation:selpulse 1.4s ease-in-out infinite; }
+  @keyframes selpulse { 0%,100%{opacity:.30} 50%{opacity:.62} }
+
+  #threeMsg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:24px; color:#666; }
+  .chip3d {
+    position:absolute; left:10px; bottom:10px; font-size:11px; color:#666;
+    background:rgba(255,255,255,.72); padding:4px 8px; border-radius:6px; pointer-events:none;
+  }
+
+  footer.palette { background:var(--panel); border-top:1px solid var(--line); padding:12px 18px 16px; display:flex; flex-direction:column; gap:11px; }
+  .row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .row > .label { width:110px; min-width:110px; font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.6px; color:#666; }
+  .swatches { display:flex; gap:8px; flex-wrap:wrap; }
+  .sw { width:34px; height:34px; border-radius:50%; border:2px solid rgba(0,0,0,.15); cursor:pointer; position:relative; padding:0; appearance:none; }
+  .sw.selected { outline:3px solid var(--ink); outline-offset:2px; }
+  .sw .nm {
+    position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(-50%);
+    background:#1c1c1c; color:#fff; font-size:11px; padding:3px 6px; border-radius:4px;
+    white-space:nowrap; opacity:0; pointer-events:none; transition:opacity .1s ease;
+  }
+  .sw:hover .nm { opacity:1; }
+</style>
+</head>
+<body>
+  <header class="bar">
+    <h1>SpokeX Wheel Builder</h1>
+    <div class="seg" id="countSeg">
+      <button data-count="32" class="active">32 spoke</button>
+      <button data-count="28">28 spoke</button>
+    </div>
+    <div class="seg" id="modeSeg">
+      <button data-mode="2d" class="active">2D</button>
+      <button data-mode="3d">3D</button>
+    </div>
+    <button class="btn" id="selAllBtn">Select all</button>
+    <button class="btn" id="deselBtn">Deselect</button>
+    <button class="btn" id="resetBtn">Reset</button>
+    <span class="hint" id="hint">Click spokes to select, then choose a Spoke color. Toggle 3D to spin the wheel.</span>
+  </header>
+
+  <main>
+    <div id="stageWrap">
+      <div id="stage2d">
+        <svg id="wheel2d" viewBox="0 0 1000 1000" role="img" aria-label="Bike wheel spoke customizer"></svg>
+      </div>
+      <div id="stage3d" hidden>
+        <div class="chip3d">drag to spin · scroll to zoom · click a spoke to select</div>
+        <div id="threeMsg" hidden>3D view needs the three.js library, which could not be loaded (CDN blocked).</div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="palette">
+    <div class="row"><span class="label">Spoke color</span><div class="swatches" id="spokeRow"></div></div>
+    <div class="row"><span class="label">Hub color</span><div class="swatches" id="hubRow"></div></div>
+    <div class="row"><span class="label">Valve color</span><div class="swatches" id="valveRow"></div></div>
+    <div class="row"><span class="label">Background</span><div class="swatches" id="bgRow"></div></div>
+  </footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>if(!window.THREE){document.write('<scr'+'ipt src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/scr'+'ipt>');}</script>
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- SpokeX anodized color line -----------------------------------
+     Eleven anodized finishes. Each hex is the *median* of the opaque pixels of
+     a photographed anodized swatch chip, sorted by luminance -- a statistic
+     robust against both the specular band and the dark machining grooves.
+
+     Provenance of the sampled chips: they are Industry Nine's, from the color
+     picker formerly served at industrynine.com/images/swatches/{14,17,18,19,20,
+     22,24,25,26,27,28,29}.png (recovered via the Wayback Machine, snapshot
+     2019-11-22). Each is a 32px photograph of a real anodized surface, vertical
+     machining striations and all -- not a flat design chip. Identity confirmed
+     visually: the picker's row order matches the name order below. The values
+     cross-check against that brand's Hydra 2 product photography, whose hub
+     barrels sample to ~#d5242e Red and ~#ee7332 Orange against #d1282a /
+     #f26f1f here. Recorded so the numbers stay verifiable -- before this ships
+     as a real SpokeX product, re-measure against SpokeX's own anodizer's
+     swatches and replace this block.
+
+     Nobody publishes hex values for anodizing, and it genuinely varies batch to
+     batch, between alloys, and across a single day's run, so treat these as the
+     centre of a distribution rather than a spec. A twelfth chip, a bronze at
+     #7e4a1b, was measured but is unused here. */
+  var SPOKEX_COLORS = [
+    { name:"Black",     hex:"#2d2d2d" },
+    { name:"Silver",    hex:"#cbcbcb" },
+    { name:"Red",       hex:"#d1282a" },
+    { name:"Orange",    hex:"#f26f1f" },
+    { name:"Gold",      hex:"#f1b33b" },
+    { name:"Lime",      hex:"#b2ca42" },
+    { name:"Green",     hex:"#2d803c" },
+    { name:"Turquoise", hex:"#02a1db" },
+    { name:"Blue",      hex:"#004db1" },
+    { name:"Purple",    hex:"#941dad" },
+    { name:"Pink",      hex:"#ee47af" }
+  ];
+  var BG_COLORS = [
+    { name:"White",      hex:"#ffffff" },
+    { name:"Paper",      hex:"#f1efe9" },
+    { name:"Light grey", hex:"#d9d9d9" },
+    { name:"Slate",      hex:"#5b6570" },
+    { name:"Charcoal",   hex:"#2b2b2b" },
+    { name:"Black",      hex:"#0e0e0e" },
+    { name:"Blue",       hex:"#004db1" },
+    { name:"Turquoise",  hex:"#02a1db" },
+    { name:"Orange",     hex:"#f26f1f" }
+  ];
+  var BLACK = "#2d2d2d";
+  var DEFAULT_HUB = "#2d2d2d";
+
+  /* ---------- color helpers ---------- */
+  function hexToRgb(h){ h=h.replace('#',''); if(h.length===3) h=h.split('').map(function(c){return c+c;}).join(''); var n=parseInt(h,16); return {r:(n>>16)&255,g:(n>>8)&255,b:n&255}; }
+  function clampByte(v){ return Math.max(0, Math.min(255, Math.round(v))); }
+  function rgbToHex(r,g,b){ return '#'+[r,g,b].map(function(v){return clampByte(v).toString(16).padStart(2,'0');}).join(''); }
+  function mix(hex, target, t){ var a=hexToRgb(hex), b=hexToRgb(target); return rgbToHex(a.r+(b.r-a.r)*t, a.g+(b.g-a.g)*t, a.b+(b.b-a.b)*t); }
+  function lighten(h,t){ return mix(h,'#ffffff',t); }
+  function darken(h,t){ return mix(h,'#000000',t); }
+  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+  function scaleRgb(h,k){ var c=hexToRgb(h); return rgbToHex(c.r*k, c.g*k, c.b*k); }
+
+  /* ---------- anodized shading model (shared by 2D and 3D) -----------------
+     Measured off those same swatch chips: across the 11 colors the machined
+     grooves sit around 0.65x the median tone and the polished highlight band
+     around 1.55x, the highlight also washing ~10% toward white as it clips.
+     2D reproduces this with gradients; 3D reproduces it with lighting whose
+     ambient/key split is set to the same LO..HI range (see LIGHT below), so a
+     swatch lands on the same mid-tone in either renderer. */
+  var ANO_LO = 0.65, ANO_HI = 1.55, ANO_SPEC = 0.10;
+  function anoLo(h){ return scaleRgb(h, ANO_LO); }
+  function anoHi(h){ return mix(scaleRgb(h, ANO_HI), '#ffffff', ANO_SPEC); }
+  // the anodized ramp used for flat fills (swatches, hub shell): groove -> body
+  // -> specular band -> body -> groove, i.e. what a chip actually looks like.
+  function anoStops(h){
+    return [[0,anoLo(h)], [0.30,h], [0.46,anoHi(h)], [0.62,h], [1,anoLo(h)]];
+  }
+  function anoCss(h, deg){
+    return 'linear-gradient(' + deg + 'deg,' + anoStops(h).map(function(s){
+      return s[1] + ' ' + (s[0]*100).toFixed(0) + '%';
+    }).join(',') + ')';
+  }
+
+  /* ---------- state ---------- */
+  function freshSpokeColors(n){ var a=[]; for(var i=0;i<n;i++) a.push(BLACK); return a; }
+  var state = {
+    count: 32,
+    spokeColors: freshSpokeColors(32),
+    selected: new Set(),
+    hubColor: DEFAULT_HUB,
+    valveColor: DEFAULT_HUB,
+    bg: "#ffffff",
+    mode: "2d"
+  };
+  var activeSpokeColor = null;
+
+  /* ---------- geometry: spoke lacing (3-cross for 32h, 2-cross for 28h) ---------- */
+  function buildSpokes(N){
+    var M = N/2, X = (N===32)?3:2, step = 360/N, out = [];
+    for (var side=0; side<2; side++){
+      var near = (side===1);                 // side 1 = right/near flange (odd rim holes)
+      for (var j=0;j<M;j++){
+        var baseRim = 2*j + (near?1:0);        // rim hole index at 0-cross
+        var dir = (j%2===0) ? 1 : -1;          // leading / trailing -> spokes cross
+        var rimIndex = ((baseRim + dir*2*X)%N + N)%N;
+        out.push({ near:near, hubDeg: baseRim*step, rimDeg: rimIndex*step });
+      }
+    }
+    return out;
+  }
+  // deg measured clockwise from top; matches between 2D (y-down) and 3D (y-up)
+  function polar(cx,cy,r,deg){ var t=deg*Math.PI/180; return { x: cx + r*Math.sin(t), y: cy - r*Math.cos(t) }; }
+  var f2 = function(n){ return (+n).toFixed(1); };
+
+  /* =====================================================================
+     2D  (SVG)
+     ===================================================================== */
+  var C = 500;
+  var wheel2d = document.getElementById('wheel2d');
+  var stage2d = document.getElementById('stage2d');
+  var stage3d = document.getElementById('stage3d');
+
+  function blade(hub, rim, wHub, wRim, fill, stroke, sw, extra){
+    var dx=rim.x-hub.x, dy=rim.y-hub.y, L=Math.hypot(dx,dy)||1;
+    var px=-dy/L, py=dx/L;
+    var pts = [
+      [hub.x+px*wHub/2, hub.y+py*wHub/2],
+      [rim.x+px*wRim/2, rim.y+py*wRim/2],
+      [rim.x-px*wRim/2, rim.y-py*wRim/2],
+      [hub.x-px*wHub/2, hub.y-py*wHub/2]
+    ].map(function(a){ return f2(a[0])+','+f2(a[1]); }).join(' ');
+    return '<polygon points="'+pts+'" fill="'+fill+'"'
+      + (stroke ? ' stroke="'+stroke+'" stroke-width="'+sw+'"' : '')
+      + (extra || '') + '/>';
+  }
+  function circleF(cx,cy,r,fill,stroke,sw){
+    return '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="'+fill+'"'
+      + (stroke ? ' stroke="'+stroke+'" stroke-width="'+sw+'"' : '') + '/>';
+  }
+  function dot(p,r,fill){ return '<circle cx="'+f2(p.x)+'" cy="'+f2(p.y)+'" r="'+r+'" fill="'+fill+'"/>'; }
+
+  // hub attach radii (compact, straight-pull) and the drive side (degrees)
+  var HUB_NEAR = 47, HUB_FAR = 43, DRIVE_DEG = 90;
+
+  // Valve placement: wheelbuilding convention puts the valve hole between two
+  // (near) parallel spokes -- NOT in a crossing "wedge" -- so a pump head has
+  // clear access. Pick the non-crossing adjacent-spoke gap nearest the bottom.
+  var valveDeg = 180;
+  function segCross(p1,p2,p3,p4){
+    function ccw(a,b,c){ return (c.y-a.y)*(b.x-a.x) - (b.y-a.y)*(c.x-a.x); }
+    var d1=ccw(p3,p4,p1), d2=ccw(p3,p4,p2), d3=ccw(p1,p2,p3), d4=ccw(p1,p2,p4);
+    return ((d1>0&&d2<0)||(d1<0&&d2>0)) && ((d3>0&&d4<0)||(d3<0&&d4>0));
+  }
+  function updateValveDeg(){
+    var N = state.count, step = 360/N, spokes = buildSpokes(N), byRim = {};
+    spokes.forEach(function(s){ byRim[Math.round(s.rimDeg/step)] = s; });
+    var best = null, bestD = 1e9;
+    for (var g=0; g<N; g++){
+      var a = byRim[g], b = byRim[(g+1)%N];
+      if (!a || !b) continue;
+      var ah = polar(C,C, a.near?HUB_NEAR:HUB_FAR, a.hubDeg), ar = polar(C,C,430,a.rimDeg);
+      var bh = polar(C,C, b.near?HUB_NEAR:HUB_FAR, b.hubDeg), br = polar(C,C,430,b.rimDeg);
+      if (segCross(ah,ar,bh,br)) continue;                 // wedge -> skip
+      var center = (g + 0.5) * step;
+      var d = Math.abs(((center - 180 + 540) % 360) - 180); // angular distance to bottom
+      if (d < bestD){ bestD = d; best = center; }
+    }
+    valveDeg = (best == null) ? 180 : best;
+  }
+
+  // opts.only ('spokes' | 'hub') emits just that part on a transparent field --
+  // used by the calibration hook so a 2D measurement is not swamped by the rim.
+  function render2D(opts){
+    var pick = (opts && opts.only) || null;
+    var only = (pick === 'spokes');
+    var N = state.count, spokes = buildSpokes(N), hc = state.hubColor, out = [];
+    // hub shell reads as a machined cylinder: rolling-off top, specular band,
+    // body, groove. Same ANO ratios the 3D lighting is tuned to.
+    var shTop = scaleRgb(hc, 0.82);
+    var shHi  = anoHi(hc);
+    var shMid = hc;
+    var shLo  = anoLo(hc);
+    var edge  = scaleRgb(hc, 0.42);
+    var hole  = scaleRgb(hc, 0.34);
+
+    out.push(
+      '<defs>'
+      + '<linearGradient id="rimSheen" x1="0" y1="0" x2="0" y2="1">'
+        + '<stop offset="0" stop-color="#3a3a3a"/><stop offset="0.5" stop-color="#1e1e1e"/><stop offset="1" stop-color="#0d0d0d"/>'
+      + '</linearGradient>'
+      + '<linearGradient id="hubShell" x1="0" y1="0" x2="0" y2="1">'
+        + '<stop offset="0" stop-color="'+shTop+'"/>'
+        + '<stop offset="0.20" stop-color="'+shHi+'"/>'
+        + '<stop offset="0.44" stop-color="'+shMid+'"/>'
+        + '<stop offset="0.72" stop-color="'+shMid+'"/>'
+        + '<stop offset="1" stop-color="'+shLo+'"/>'
+      + '</linearGradient>'
+      + '<radialGradient id="axleCap" cx="0.36" cy="0.32" r="0.85">'
+        + '<stop offset="0" stop-color="#ededed"/><stop offset="0.6" stop-color="#9c9c9c"/><stop offset="1" stop-color="#4a4a4a"/>'
+      + '</radialGradient>'
+      + '<filter id="hubShadow" x="-60%" y="-60%" width="220%" height="220%">'
+        + '<feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.30"/>'
+      + '</filter>'
+      + '<path id="rimArc" d="M 500 52 A 448 448 0 1 1 499.6 52" fill="none"/>'
+      + '</defs>'
+    );
+
+    /* ---- rim: matte black alloy with etched sidewall text ---- */
+    if (!only) {
+    out.push('<g>');
+    out.push(circleF(C,C,454,'none','url(#rimSheen)',48));
+    out.push('<text font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="20" letter-spacing="10" fill="#767676" fill-opacity="0.5">'
+      + '<textPath href="#rimArc" startOffset="21%">SpokeX</textPath></text>');
+    out.push('<text font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="20" letter-spacing="10" fill="#767676" fill-opacity="0.5">'
+      + '<textPath href="#rimArc" startOffset="71%">SpokeX</textPath></text>');
+    out.push(circleF(C,C,431,'none','#e6e6e6',2).replace('/>',' stroke-opacity="0.40"/>'));   // bright inner bead
+    out.push(circleF(C,C,477,'none','#000',2).replace('/>',' stroke-opacity="0.60"/>'));      // outer edge
+    out.push(circleF(C,C,470,'none','#fff',3).replace('/>',' stroke-opacity="0.05"/>'));      // faint outer sheen
+    out.push('</g>');
+    }
+
+    /* ---- spokes: thin, straight-pull ---- */
+    var glow = '', body = '', hit = '';
+    spokes.forEach(function(s,i){
+      var hub = polar(C,C, s.near ? HUB_NEAR : HUB_FAR, s.hubDeg);
+      var rim = polar(C,C,430,s.rimDeg);
+      var col = state.spokeColors[i] || BLACK;
+      var sel = state.selected.has(i);
+      if (sel) glow += blade(hub,rim,12,10,'rgba(32,102,255,0.34)',null,0,' class="selglow"');
+      // Flat body + a groove-dark edge, and deliberately NO specular line.
+      // A spoke is 3.4 units of a 1000 viewBox, i.e. under 3 CSS px, so a
+      // highlight wide enough to see covers most of the spoke's core and drags
+      // it lighter than its own swatch: measured against the 3D cylinder, every
+      // highlight setting tried made the 2D/3D match worse, and one narrow
+      // enough not to is subpixel. The dark edge alone is what gives the spoke
+      // its tubular read, and it happens to track the shaded side of the 3D
+      // cylinder closely -- which is why the two modes agree to ~3/255 here.
+      body += blade(hub,rim,3.4,2.6, col, anoLo(col), 0.55);
+      if (sel) body += blade(hub,rim,3.4,2.6,'none','#1e66ff',1.6);
+      hit += '<line class="hit" data-i="'+i+'" x1="'+f2(hub.x)+'" y1="'+f2(hub.y)+'" x2="'+f2(rim.x)+'" y2="'+f2(rim.y)+'"/>';
+    });
+    out.push('<g>'+glow+'</g><g>'+body+'</g>');
+
+    if (only) { wheel2d.innerHTML = out.join(''); return; }
+    if (pick === 'hub') out.splice(1);    // keep defs, drop rim + spokes
+
+    /* ---- nipples (subtle, tinted to the spoke) ---- */
+    if (!pick) {
+    var nips = '';
+    spokes.forEach(function(s,i){
+      var a = polar(C,C,423,s.rimDeg), b = polar(C,C,434,s.rimDeg);
+      var col = state.spokeColors[i] || BLACK;
+      nips += blade(a,b,3.8,2.8, mix(col,'#7a7a7a',0.25), null, 0);
+    });
+    out.push('<g>'+nips+'</g>');
+
+    /* ---- valve stem (between two parallel spokes) ---- */
+    (function(){
+      var vc = state.valveColor || BLACK;
+      var collarA = polar(C,C,440,valveDeg), collarB = polar(C,C,427,valveDeg);
+      var stemA = polar(C,C,433,valveDeg), stemB = polar(C,C,391,valveDeg);
+      var tip = polar(C,C,388,valveDeg);
+      out.push(blade(collarA,collarB, 9.5, 8.5, scaleRgb(vc,0.88), anoLo(vc), 0.7));     // rim nut / collar
+      out.push(blade(stemA,stemB, 6, 4.4, vc, anoLo(vc), 0.6));                          // stem
+      out.push('<line x1="'+f2(stemA.x)+'" y1="'+f2(stemA.y)+'" x2="'+f2(stemB.x)+'" y2="'+f2(stemB.y)+'" stroke="'+anoHi(vc)+'" stroke-opacity="0.8" stroke-width="0.9"/>');
+      out.push(dot(tip, 2.3, '#9a9a9a'));                                                // lockring tip
+    })();
+    }
+
+    /* ---- hub: compact machined rear hub ---- */
+    if (pick === 'hub'){
+      // just the anodised shell, so this lines up with three.hubColorParts
+      // (barrel + both flanges) and no freehub/axle hardware skews the sample
+      out.push(circleF(C,C,51,'url(#hubShell)',null,0));
+      out.push(circleF(C,C,33,'url(#hubShell)',null,0));
+      wheel2d.innerHTML = out.join('');
+      return;
+    }
+    out.push('<g filter="url(#hubShadow)">');
+    // freehub body splines poking out behind the drive-side flange
+    var fh = '';
+    for (var k = 0; k < 16; k++){
+      var d = DRIVE_DEG - 34 + k*4.4;
+      var p1 = polar(C,C,49,d), p2 = polar(C,C,60,d);
+      fh += '<line x1="'+f2(p1.x)+'" y1="'+f2(p1.y)+'" x2="'+f2(p2.x)+'" y2="'+f2(p2.y)+'" stroke="#191919" stroke-width="2.2"/>';
+    }
+    out.push('<g>'+fh+'</g>');
+    out.push(circleF(C,C,53,'url(#hubShell)',edge,1.5));                 // far flange (peeks)
+    out.push(circleF(C,C,51,'url(#hubShell)',edge,2));                  // near flange
+    spokes.forEach(function(s){ out.push(dot(polar(C,C,44,s.hubDeg),2.3,hole)); });  // straight-pull holes
+    out.push(circleF(C,C,33,'url(#hubShell)',null,0));                  // shell / barrel face
+    out.push(circleF(C,C,33,'none','#000',1).replace('/>',' stroke-opacity="0.20"/>'));
+    out.push(circleF(C,C,26,'none','#000',1).replace('/>',' stroke-opacity="0.16"/>'));
+    out.push(circleF(C,C,13,'url(#axleCap)','#3c3c3c',1));              // axle end cap
+    out.push(circleF(C,C,5.4,'#f4f4f4','#8a8a8a',0.8));                // thru-axle hole
+    out.push('<ellipse cx="484" cy="487" rx="17" ry="10" fill="#fff" fill-opacity="0.10"/>'); // soft specular
+    out.push('</g>');
+
+    /* ---- click targets ---- */
+    if (!pick) out.push('<g>'+hit+'</g>');
+
+    wheel2d.innerHTML = out.join('');
+  }
+
+  wheel2d.addEventListener('click', function(e){
+    var el = e.target.closest('[data-i]');
+    if (!el) return;
+    toggleSpoke(+el.getAttribute('data-i'));
+  });
+
+  /* =====================================================================
+     3D  (three.js)
+     ===================================================================== */
+  var FLANGE_R3D = 30, FLANGE_Z = 24, RIM_R3D = 452;
+  var three = null;
+  var three_lights = null;
+  var _up = null;
+
+  /* Lighting / material constants for the anodized look.
+     Renderer stays linear-output with NoToneMapping so a material hex is not
+     gamma-shifted away from the 2D SVG fill (see ensureThree). That makes the
+     lit result a straight multiply of the hex, so these numbers are chosen to
+     put the *area-mean* of a lit spoke back on the raw hex while spreading the
+     surface across the ANO_LO..ANO_HI range the 2D gradients use.
+     Calibrated by rasterising both renderers and comparing means -- see the
+     __wheel debug hook at the bottom of this script. */
+  var LIGHT = {
+    ambient: 0.60,   // floor -> the groove tone
+    key:     0.92,   // key light -> the specular side
+    fill:    0.16,   // keeps the unlit side off the ANO_LO floor
+    metal:   0.25,   // anodized aluminium: some sheen, but no env map to
+    rough:   0.42    // reflect, so this has to stay modest
+  };
+  function anoMat(hex, extra){
+    var o = { color:new THREE.Color(hex), metalness:LIGHT.metal, roughness:LIGHT.rough };
+    if (extra) for (var k in extra) o[k] = extra[k];
+    return new THREE.MeshStandardMaterial(o);
+  }
+
+  function v3(r, deg, z){ var t=deg*Math.PI/180; return new THREE.Vector3(r*Math.sin(t), r*Math.cos(t), z); }
+  function orient(mesh, from, to){
+    var dir = new THREE.Vector3().subVectors(to, from);
+    var len = dir.length() || 1;
+    mesh.position.copy(from).addScaledVector(dir, 0.5);
+    mesh.quaternion.setFromUnitVectors(_up, dir.clone().normalize());
+    mesh.scale.set(1, len, 1);
+  }
+
+  function buildWheel3D(){
+    var g = three.wheelGroup;
+    while (g.children.length) g.remove(g.children[0]);
+    three.spokeMeshes = [];
+    three.hubColorParts = [];
+
+    var rim = new THREE.Mesh(
+      new THREE.TorusGeometry(RIM_R3D, 18, 20, 160),
+      // matte black alloy: same mid-tone as the 2D rimSheen gradient, but
+      // rougher than the anodized parts so it stays flat next to them
+      anoMat('#1e1e1e', { roughness:0.72, metalness:0.12 })
+    );
+    rim.castShadow = true; rim.receiveShadow = true;
+    g.add(rim);
+
+    function hubMat(){ return anoMat(state.hubColor); }
+    var barrel = new THREE.Mesh(new THREE.CylinderGeometry(17,17,44,36), hubMat());
+    barrel.rotation.x = Math.PI/2; barrel.castShadow = true;
+    g.add(barrel); three.hubColorParts.push(barrel);
+    [FLANGE_Z, -FLANGE_Z].forEach(function(z){
+      var fl = new THREE.Mesh(new THREE.CylinderGeometry(FLANGE_R3D, FLANGE_R3D, 6, 44), hubMat());
+      fl.rotation.x = Math.PI/2; fl.position.z = z; fl.castShadow = true;
+      g.add(fl); three.hubColorParts.push(fl);
+    });
+    // splined freehub body on the drive side
+    var fh = new THREE.Mesh(new THREE.CylinderGeometry(14,14,22,26),
+      new THREE.MeshStandardMaterial({ color:0x1b1b1b, metalness:0.5, roughness:0.5 }));
+    fh.rotation.x = Math.PI/2; fh.position.z = 30;
+    g.add(fh);
+    // silver axle end caps + thru-axle
+    [34, -34].forEach(function(z){
+      var cap = new THREE.Mesh(new THREE.CylinderGeometry(9,9,14,20),
+        new THREE.MeshStandardMaterial({ color:0x8c8c8c, metalness:0.75, roughness:0.35 }));
+      cap.rotation.x = Math.PI/2; cap.position.z = z;
+      g.add(cap);
+    });
+    var axle = new THREE.Mesh(new THREE.CylinderGeometry(3.6,3.6,96,14),
+      new THREE.MeshStandardMaterial({ color:0x9a9a9a, metalness:0.7, roughness:0.35 }));
+    axle.rotation.x = Math.PI/2;
+    g.add(axle);
+
+    // valve stem (radial, in the wheel plane, at the parallel-spoke gap)
+    three.valveParts = [];
+    (function(){
+      var dir = v3(1, valveDeg, 0);
+      function seg(r1, r2, geo){
+        var m = new THREE.Mesh(geo, anoMat(state.valveColor));
+        orient(m, dir.clone().multiplyScalar(r1), dir.clone().multiplyScalar(r2));
+        g.add(m); three.valveParts.push(m);
+        return m;
+      }
+      seg(441, 428, new THREE.CylinderGeometry(4.8, 4.8, 1, 16));   // rim collar / nut
+      seg(432, 392, new THREE.CylinderGeometry(3.2, 2.7, 1, 14));   // stem
+      var tip = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 1, 10),
+        new THREE.MeshStandardMaterial({ color:0x8f8f8f, metalness:0.6, roughness:0.3 }));
+      orient(tip, dir.clone().multiplyScalar(392), dir.clone().multiplyScalar(384));
+      g.add(tip);
+    })();
+
+    var spokes = buildSpokes(state.count);
+    var baseGeo = new THREE.CylinderGeometry(1.8, 1.8, 1, 8);
+    three.spokeGeo = baseGeo;
+    spokes.forEach(function(s,i){
+      var from = v3(FLANGE_R3D, s.hubDeg, s.near ? FLANGE_Z : -FLANGE_Z);
+      var to   = v3(RIM_R3D,    s.rimDeg, 0);
+      var m = new THREE.Mesh(baseGeo, anoMat(state.spokeColors[i] || BLACK, { emissive:new THREE.Color(0x000000) }));
+      m.castShadow = true;
+      m.userData.i = i;
+      orient(m, from, to);
+      g.add(m); three.spokeMeshes.push(m);
+    });
+    updateSelection3D();
+  }
+
+  function ensureThree(){
+    if (three) return three;
+    if (!window.THREE) return null;
+    _up = new THREE.Vector3(0,1,0);
+
+    var scene = new THREE.Scene();
+    scene.background = new THREE.Color(state.bg);
+
+    var camera = new THREE.PerspectiveCamera(42, 1, 1, 8000);
+    camera.position.set(0, 170, 1500);
+
+    var renderer = new THREE.WebGLRenderer({ antialias:true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // keep default (linear) output + no tone mapping so material hex renders
+    // the same values the 2D SVG uses
+    renderer.toneMapping = THREE.NoToneMapping;
+    var dom = renderer.domElement;
+    dom.style.width = '100%'; dom.style.height = '100%'; dom.style.display = 'block';
+    dom.style.touchAction = 'none'; dom.style.cursor = 'grab';
+    stage3d.appendChild(dom);
+
+    // lighting tuned so a lit spoke's area-mean lands back on the raw hex while
+    // the surface still travels the anodized groove->specular range (see LIGHT)
+    var amb = new THREE.AmbientLight(0xffffff, LIGHT.ambient);
+    scene.add(amb);
+    var key = new THREE.DirectionalLight(0xffffff, LIGHT.key);
+    key.position.set(250, 550, 650);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.camera.left = -650; key.shadow.camera.right = 650;
+    key.shadow.camera.top = 650; key.shadow.camera.bottom = -650;
+    key.shadow.camera.near = 50; key.shadow.camera.far = 3000;
+    scene.add(key);
+    var fill = new THREE.DirectionalLight(0xffffff, LIGHT.fill); fill.position.set(-400,-150,-300); scene.add(fill);
+    three_lights = { amb:amb, key:key, fill:fill };
+
+    var wheelGroup = new THREE.Group();
+    scene.add(wheelGroup);
+
+    var ground = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), new THREE.ShadowMaterial({ opacity:0.24 }));
+    ground.rotation.x = -Math.PI/2; ground.position.y = -498; ground.receiveShadow = true;
+    scene.add(ground);
+
+    three = {
+      scene:scene, camera:camera, renderer:renderer, wheelGroup:wheelGroup,
+      spokeMeshes:[], hubColorParts:[], ray:new THREE.Raycaster(),
+      vel:{x:0,y:0}, dragging:false, hasInteracted:false, raf:null,
+      moved:0, lastX:0, lastY:0
+    };
+
+    buildWheel3D();
+    wirePointer(dom);
+    window.addEventListener('resize', function(){ if (state.mode === '3d') resize3D(); });
+    return three;
+  }
+
+  var _q = null, _ax = null, _ay = null;
+  function spinWorld(gx, gy){
+    if (!_q) { _q = new THREE.Quaternion(); _ax = new THREE.Vector3(1,0,0); _ay = new THREE.Vector3(0,1,0); }
+    _q.setFromAxisAngle(_ay, gx); three.wheelGroup.quaternion.premultiply(_q);
+    _q.setFromAxisAngle(_ax, gy); three.wheelGroup.quaternion.premultiply(_q);
+  }
+
+  function wirePointer(dom){
+    dom.addEventListener('pointerdown', function(e){
+      three.dragging = true; three.hasInteracted = true; three.moved = 0;
+      three.lastX = e.clientX; three.lastY = e.clientY;
+      three.vel.x = three.vel.y = 0;
+      dom.style.cursor = 'grabbing';
+      try { dom.setPointerCapture(e.pointerId); } catch(_){}
+    });
+    dom.addEventListener('pointermove', function(e){
+      if (!three.dragging) return;
+      var dx = e.clientX - three.lastX, dy = e.clientY - three.lastY;
+      three.lastX = e.clientX; three.lastY = e.clientY;
+      three.moved += Math.abs(dx) + Math.abs(dy);
+      var gx = dx * 0.007, gy = dy * 0.007;
+      spinWorld(gx, gy);
+      three.vel.x = gx; three.vel.y = gy;
+    });
+    function endDrag(e){
+      if (!three.dragging) return;
+      three.dragging = false;
+      dom.style.cursor = 'grab';
+      try { dom.releasePointerCapture(e.pointerId); } catch(_){}
+      if (three.moved < 6) raycastSelect(e);
+    }
+    dom.addEventListener('pointerup', endDrag);
+    dom.addEventListener('pointercancel', endDrag);
+    dom.addEventListener('wheel', function(e){
+      e.preventDefault();
+      three.camera.position.z = clamp(three.camera.position.z + e.deltaY * 0.6, 650, 3200);
+    }, { passive:false });
+  }
+
+  function raycastSelect(e){
+    var r = three.renderer.domElement.getBoundingClientRect();
+    var nx = ((e.clientX - r.left) / r.width) * 2 - 1;
+    var ny = -((e.clientY - r.top) / r.height) * 2 + 1;
+    three.ray.setFromCamera({ x:nx, y:ny }, three.camera);
+    var hits = three.ray.intersectObjects(three.spokeMeshes, false);
+    if (!hits.length) return;
+    toggleSpoke(hits[0].object.userData.i);
+  }
+
+  function resize3D(){
+    if (!three) return;
+    var w = stage3d.clientWidth || 1, h = stage3d.clientHeight || 1;
+    three.renderer.setSize(w, h, false);
+    three.camera.aspect = w / h;
+    three.camera.updateProjectionMatrix();
+    three.renderer.render(three.scene, three.camera);
+  }
+
+  function loop(){
+    if (state.mode !== '3d' || !three) { if (three) three.raf = null; return; }
+    three.raf = requestAnimationFrame(loop);
+    if (!three.dragging){
+      if (!three.hasInteracted){
+        spinWorld(0.004, 0);
+      } else {
+        spinWorld(three.vel.x, three.vel.y);
+        three.vel.x *= 0.94; three.vel.y *= 0.94;
+        if (Math.abs(three.vel.x) < 0.0002) three.vel.x = 0;
+        if (Math.abs(three.vel.y) < 0.0002) three.vel.y = 0;
+      }
+    }
+    three.camera.lookAt(0, 0, 0);
+    three.renderer.render(three.scene, three.camera);
+  }
+  function startLoop(){ if (three && !three.raf) loop(); }
+  function stopLoop(){ if (three && three.raf){ cancelAnimationFrame(three.raf); three.raf = null; } }
+
+  function syncColors3D(){
+    if (!three) return;
+    three.spokeMeshes.forEach(function(m,i){ m.material.color.set(state.spokeColors[i] || BLACK); });
+    three.hubColorParts.forEach(function(m){ m.material.color.set(state.hubColor); });
+    if (three.valveParts) three.valveParts.forEach(function(m){ m.material.color.set(state.valveColor); });
+    three.scene.background.set(state.bg);
+  }
+  function updateSelection3D(){
+    if (!three) return;
+    three.spokeMeshes.forEach(function(m,i){
+      m.material.emissive.set(state.selected.has(i) ? 0x1b3a80 : 0x000000);
+    });
+  }
+
+  /* =====================================================================
+     unified updates + interactions
+     ===================================================================== */
+  function refreshSpokes(){ render2D(); if (three){ syncColors3D(); updateSelection3D(); } }
+  function refreshHub(){ render2D(); if (three) syncColors3D(); }
+  function refreshSelection(){ render2D(); if (three) updateSelection3D(); }
+
+  function setBg(hex){
+    state.bg = hex;
+    stage2d.style.background = hex;
+    stage3d.style.background = hex;
+    if (three) three.scene.background.set(hex);
+  }
+
+  function toggleSpoke(i){
+    if (state.selected.has(i)) state.selected.delete(i); else state.selected.add(i);
+    refreshSelection();
+    updateHint();
+  }
+
+  function updateHint(){
+    var n = state.selected.size;
+    hint.style.color = '';
+    hint.textContent = n
+      ? (n + ' spoke' + (n>1?'s':'') + ' selected — click a Spoke color to apply.')
+      : 'Click spokes to select, then choose a Spoke color. Toggle 3D to spin the wheel.';
+  }
+  var hintTimer = null;
+  function flash(msg){
+    hint.textContent = msg; hint.style.color = '#d21f2b';
+    if (hintTimer) clearTimeout(hintTimer);
+    hintTimer = setTimeout(updateHint, 1600);
+  }
+
+  /* ---------- palette ---------- */
+  var hint = document.getElementById('hint');
+  var spokeRow = document.getElementById('spokeRow');
+  var hubRow = document.getElementById('hubRow');
+  var valveRow = document.getElementById('valveRow');
+  var bgRow = document.getElementById('bgRow');
+
+  function markSelected(container, node){
+    Array.prototype.forEach.call(container.children, function(ch){ ch.classList.toggle('selected', ch === node); });
+  }
+  function buildRow(container, colors, onPick, initialHex, ano){
+    colors.forEach(function(c){
+      var b = document.createElement('button');
+      b.className = 'sw';
+      // anodized swatches get the measured groove/specular ramp; flat
+      // background swatches stay flat so they read as the colour they set.
+      b.style.background = ano ? anoCss(c.hex, 100) : c.hex;
+      b.title = c.name;
+      b.innerHTML = '<span class="nm">' + c.name + '</span>';
+      if (initialHex && c.hex.toLowerCase() === initialHex.toLowerCase()) b.classList.add('selected');
+      b.addEventListener('click', function(){ onPick(c, b); });
+      container.appendChild(b);
+    });
+  }
+
+  buildRow(spokeRow, SPOKEX_COLORS, function(c, node){
+    markSelected(spokeRow, node);
+    activeSpokeColor = c.hex;
+    if (state.selected.size === 0){ flash('Select one or more spokes first'); return; }
+    var applied = state.selected.size;
+    state.selected.forEach(function(i){ state.spokeColors[i] = c.hex; });
+    state.selected.clear();
+    refreshSpokes();
+    hint.style.color = '';
+    hint.textContent = 'Applied ' + c.name + ' to ' + applied + ' spoke' + (applied>1?'s':'') + '. Select more to keep going.';
+  }, null, true);
+  buildRow(hubRow, SPOKEX_COLORS, function(c, node){
+    markSelected(hubRow, node);
+    state.hubColor = c.hex;
+    refreshHub();
+  }, DEFAULT_HUB, true);
+  buildRow(valveRow, SPOKEX_COLORS, function(c, node){
+    markSelected(valveRow, node);
+    state.valveColor = c.hex;
+    render2D();
+    if (three) syncColors3D();
+  }, DEFAULT_HUB, true);
+  buildRow(bgRow, BG_COLORS, function(c, node){
+    markSelected(bgRow, node);
+    setBg(c.hex);
+  }, '#ffffff');
+
+  /* ---------- top-bar controls ---------- */
+  var countSeg = document.getElementById('countSeg');
+  var modeSeg = document.getElementById('modeSeg');
+
+  countSeg.addEventListener('click', function(e){
+    var btn = e.target.closest('button'); if (!btn) return;
+    var c = parseInt(btn.getAttribute('data-count'), 10);
+    if (c === state.count) return;
+    state.count = c;
+    state.spokeColors = freshSpokeColors(c);
+    state.selected.clear();
+    updateValveDeg();
+    Array.prototype.forEach.call(countSeg.children, function(ch){ ch.classList.toggle('active', ch === btn); });
+    render2D();
+    if (three) buildWheel3D();
+    updateHint();
+  });
+
+  modeSeg.addEventListener('click', function(e){
+    var btn = e.target.closest('button'); if (!btn) return;
+    setMode(btn.getAttribute('data-mode'));
+  });
+
+  function setMode(m){
+    state.mode = m;
+    Array.prototype.forEach.call(modeSeg.children, function(ch){ ch.classList.toggle('active', ch.getAttribute('data-mode') === m); });
+    stage2d.hidden = (m !== '2d');
+    stage3d.hidden = (m !== '3d');
+    if (m === '3d'){
+      var t = ensureThree();
+      if (!t){ document.getElementById('threeMsg').hidden = false; return; }
+      syncColors3D();
+      requestAnimationFrame(function(){ resize3D(); startLoop(); });
+    } else {
+      stopLoop();
+    }
+  }
+
+  document.getElementById('selAllBtn').addEventListener('click', function(){
+    state.selected = new Set();
+    for (var i=0;i<state.count;i++) state.selected.add(i);
+    refreshSelection(); updateHint();
+  });
+  document.getElementById('deselBtn').addEventListener('click', function(){
+    state.selected.clear();
+    refreshSelection(); updateHint();
+  });
+  document.getElementById('resetBtn').addEventListener('click', function(){
+    state.spokeColors = freshSpokeColors(state.count);
+    state.selected.clear();
+    state.hubColor = DEFAULT_HUB;
+    state.valveColor = DEFAULT_HUB;
+    activeSpokeColor = null;
+    markSelected(spokeRow, null);
+    Array.prototype.forEach.call(hubRow.children, function(ch, idx){ ch.classList.toggle('selected', idx === 0); });
+    Array.prototype.forEach.call(valveRow.children, function(ch, idx){ ch.classList.toggle('selected', idx === 0); });
+    Array.prototype.forEach.call(bgRow.children, function(ch, idx){ ch.classList.toggle('selected', idx === 0); });
+    setBg('#ffffff');
+    refreshSpokes();
+    updateHint();
+  });
+
+  /* ---------- calibration hook ----------------------------------------------
+     The only honest way to check the 2D/3D match: rasterise each renderer and
+     compare the colour of pixels that are *fully covered* by a spoke.
+
+     Coverage is resolved exactly by rendering each mode twice, once over black
+     and once over white, and keeping only pixels whose colour is identical in
+     both -- an antialiased edge pixel is a blend with the backdrop, so it moves;
+     an interior pixel does not. That removes the edge-blend bias that otherwise
+     swamps a 2px-wide spoke and makes the two modes look further apart than
+     they are. 3D reads back through an offscreen render target, because the
+     renderer runs with preserveDrawingBuffer:false and its canvas is not
+     reliably readable after the compositor has taken it. */
+  var CAL_S = 900;
+  function pixStats(a, b){
+    // a, b = same scene over black / over white. Keep pixels where a === b.
+    var n=0, sr=0, sg=0, sb=0, lum=[];
+    for (var i=0; i<a.length; i+=4){
+      if (a[i]!==b[i] || a[i+1]!==b[i+1] || a[i+2]!==b[i+2]) continue;   // edge blend
+      if (a[i]===0 && a[i+1]===0 && a[i+2]===0) continue;                 // unlit backdrop
+      if (a[i]===255 && a[i+1]===255 && a[i+2]===255) continue;
+      sr+=a[i]; sg+=a[i+1]; sb+=a[i+2]; n++;
+      lum.push([0.2126*a[i]+0.7152*a[i+1]+0.0722*a[i+2], a[i], a[i+1], a[i+2]]);
+    }
+    if (!n) return { n:0 };
+    lum.sort(function(x,y){ return x[0]-y[0]; });
+    function at(q){ var p=lum[Math.round(q*(lum.length-1))]; return rgbToHex(p[1],p[2],p[3]); }
+    return { n:n, mean:rgbToHex(sr/n,sg/n,sb/n), med:at(0.5), p10:at(0.10), p90:at(0.90) };
+  }
+
+  function rasterize2D(bgHex){
+    var svg = new XMLSerializer().serializeToString(wheel2d);
+    return new Promise(function(res, rej){
+      var img = new Image();
+      img.onload = function(){
+        var c = document.createElement('canvas'); c.width = c.height = CAL_S;
+        var g = c.getContext('2d');
+        g.fillStyle = bgHex; g.fillRect(0,0,CAL_S,CAL_S);
+        g.drawImage(img, 0, 0, CAL_S, CAL_S);
+        res(g.getImageData(0,0,CAL_S,CAL_S).data);
+      };
+      img.onerror = rej;
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    });
+  }
+
+  var _rt = null;
+  function rasterize3D(bgHex){
+    if (!_rt) _rt = new THREE.WebGLRenderTarget(CAL_S, CAL_S);
+    var prevBg = three.scene.background.getHex();
+    three.scene.background = new THREE.Color(bgHex);
+    three.renderer.setRenderTarget(_rt);
+    three.renderer.render(three.scene, three.camera);
+    var buf = new Uint8Array(CAL_S*CAL_S*4);
+    three.renderer.readRenderTargetPixels(_rt, 0, 0, CAL_S, CAL_S, buf);
+    three.renderer.setRenderTarget(null);
+    three.scene.background = new THREE.Color(prevBg);
+    return buf;
+  }
+
+  // Isolate one group of meshes: everything else in the scene is hidden, so no
+  // rim, valve or contact shadow can leak into the sample.
+  function withOnly(keep, fn){
+    var hidden = [];
+    three.scene.traverse(function(o){
+      if (o.isMesh && keep.indexOf(o) < 0 && o.visible){ hidden.push(o); o.visible = false; }
+    });
+    try { return fn(); } finally { hidden.forEach(function(o){ o.visible = true; }); }
+  }
+
+  window.__wheel = {
+    state: state, LIGHT: LIGHT, SPOKEX_COLORS: SPOKEX_COLORS,
+    ANO: { lo:ANO_LO, hi:ANO_HI },
+    setAllSpokes: function(hex){
+      for (var i=0;i<state.spokeColors.length;i++) state.spokeColors[i]=hex;
+      refreshSpokes();
+    },
+    applyLight: function(p){
+      for (var k in p) LIGHT[k] = p[k];
+      if (three_lights){
+        three_lights.amb.intensity = LIGHT.ambient;
+        three_lights.key.intensity = LIGHT.key;
+        three_lights.fill.intensity = LIGHT.fill;
+      }
+      if (three) buildWheel3D();
+    },
+    // face-on and motionless, so a measurement is repeatable
+    freeze3D: function(){
+      if (!three) return;
+      three.hasInteracted = true; three.vel.x = three.vel.y = 0;
+      three.wheelGroup.quaternion.identity();
+    },
+    measure2D: async function(part){
+      render2D({ only: part || 'spokes' });
+      try {
+        var a = await rasterize2D('#000000'), b = await rasterize2D('#ffffff');
+        return pixStats(a, b);
+      } finally { render2D(); }
+    },
+    measure3D: function(part){
+      var keep = (part === 'hub') ? three.hubColorParts : three.spokeMeshes;
+      return withOnly(keep, function(){
+        return pixStats(rasterize3D('#000000'), rasterize3D('#ffffff'));
+      });
+    }
+  };
+
+  /* ---------- go ---------- */
+  updateValveDeg();
+  setBg('#ffffff');
+  render2D();
+})();
+</script>
+</body>
+</html>
