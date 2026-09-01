@@ -729,18 +729,48 @@
     return 'spokex-wheel-' + state.count + 'h-' + state.mode + '.jpg';
   }
 
+  var OK_GREEN = '#1c7c3f';
+
+  /* Two ways out, resolved once at startup.
+
+     Served normally (GitHub Pages, a local server, file://) the ordinary
+     anchor-with-download route works and this stays null.
+
+     Inside the claude.ai artifact viewer the page is sandboxed without download
+     permission, so an anchor -- blob: href included -- silently does nothing.
+     That host instead offers a bridge that prompts the viewer to confirm the
+     save. Resolving it is asynchronous and deliberately indistinguishable from
+     "not available", so we keep the promise and settle it at save time rather
+     than racing a click against it. */
+  var downloadBridge = (window.claude && typeof window.claude.use === 'function')
+    ? window.claude.use('downloads').catch(function(){ return null; })
+    : Promise.resolve(null);
+
   function saveCanvas(canvas, name){
     canvas.toBlob(function(blob){
       if (!blob){ flash('Export failed — could not encode the image.'); return; }
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url; a.download = name;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      // revoke on the next tick; revoking synchronously can cancel the save
-      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
-      flash('Saved ' + name, '#1c7c3f');
+      downloadBridge.then(function(dl){
+        if (dl){
+          dl.save({ filename:name, data:blob }).then(
+            function(){ flash('Saved ' + name, OK_GREEN); },
+            function(err){
+              var code = err && err.code;
+              if (code === 'declined'){ updateHint(); return; }   // viewer said no
+              flash('Could not save the image' + (code ? ' (' + code + ')' : '') + '.');
+            }
+          );
+          return;
+        }
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url; a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        // revoke on a later tick; revoking synchronously can cancel the save
+        setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+        flash('Saved ' + name, OK_GREEN);
+      });
     }, 'image/jpeg', EXPORT_QUALITY);
   }
 
