@@ -74,6 +74,7 @@
     <button class="btn" id="selAllBtn">Select all</button>
     <button class="btn" id="deselBtn">Deselect</button>
     <button class="btn" id="resetBtn">Reset</button>
+    <button class="btn" id="exportBtn">Export JPEG</button>
     <span class="hint" id="hint">Click spokes to select, then choose a Spoke color. Toggle 3D to spin the wheel.</span>
   </header>
 
@@ -531,7 +532,11 @@
     var camera = new THREE.PerspectiveCamera(42, 1, 1, 8000);
     camera.position.set(0, 170, 1500);
 
-    var renderer = new THREE.WebGLRenderer({ antialias:true });
+    // preserveDrawingBuffer keeps the canvas readable after the compositor has
+    // taken it, so Export JPEG can grab the 3D view at any moment rather than
+    // only inside the frame that drew it. Costs a little memory bandwidth; the
+    // scene is small enough that it does not matter.
+    var renderer = new THREE.WebGLRenderer({ antialias:true, preserveDrawingBuffer:true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -697,10 +702,103 @@
       : 'Click spokes to select, then choose a Spoke color. Toggle 3D to spin the wheel.';
   }
   var hintTimer = null;
-  function flash(msg){
-    hint.textContent = msg; hint.style.color = '#d21f2b';
+  function flash(msg, tone){
+    hint.textContent = msg; hint.style.color = tone || '#d21f2b';
     if (hintTimer) clearTimeout(hintTimer);
-    hintTimer = setTimeout(updateHint, 1600);
+    hintTimer = setTimeout(updateHint, tone ? 2600 : 1600);
+  }
+
+  /* =====================================================================
+     export the current view as a JPEG
+     ===================================================================== */
+  var EXPORT_PX = 2000;       // 2x the 1000-unit viewBox; both modes match
+  var EXPORT_QUALITY = 0.92;
+
+  // JPEG has no alpha channel, so the stage colour has to be painted in first
+  // or transparent areas composite against black.
+  function canvasWithBg(w, h){
+    var c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    var g = c.getContext('2d');
+    g.fillStyle = state.bg;
+    g.fillRect(0, 0, w, h);
+    return { canvas:c, ctx:g };
+  }
+
+  function exportName(){
+    return 'spokex-wheel-' + state.count + 'h-' + state.mode + '.jpg';
+  }
+
+  function saveCanvas(canvas, name){
+    canvas.toBlob(function(blob){
+      if (!blob){ flash('Export failed — could not encode the image.'); return; }
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // revoke on the next tick; revoking synchronously can cancel the save
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+      flash('Saved ' + name, '#1c7c3f');
+    }, 'image/jpeg', EXPORT_QUALITY);
+  }
+
+  // The blue selection glow is a UI affordance, not part of the wheel, so it is
+  // taken out of the picture and put back once the frame is captured.
+  function export2D(){
+    var saved = state.selected;
+    state.selected = new Set();
+    render2D();
+    var svg = new XMLSerializer().serializeToString(wheel2d);
+    var restore = function(){ state.selected = saved; render2D(); };
+    var img = new Image();
+    img.onload = function(){
+      var t = canvasWithBg(EXPORT_PX, EXPORT_PX);
+      t.ctx.drawImage(img, 0, 0, EXPORT_PX, EXPORT_PX);
+      restore();
+      saveCanvas(t.canvas, exportName());
+    };
+    img.onerror = function(){ restore(); flash('Export failed — could not rasterise the drawing.'); };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+
+  // Rendered at EXPORT_PX rather than straight off the on-screen canvas, whose
+  // backing size follows the window and the display's pixel ratio -- capturing
+  // that directly would hand back a different resolution per machine, and only
+  // ~860px on a non-retina screen. setSize with updateStyle=false leaves the
+  // element's CSS size alone, so nothing moves on screen.
+  function export3D(){
+    var r = three.renderer, cam = three.camera;
+    var hadSel = state.selected.size > 0;
+    if (hadSel) three.spokeMeshes.forEach(function(m){ m.material.emissive.set(0x000000); });
+
+    var prev = new THREE.Vector2(); r.getSize(prev);
+    var prevRatio = r.getPixelRatio(), prevAspect = cam.aspect;
+    try {
+      r.setPixelRatio(1);
+      r.setSize(EXPORT_PX, EXPORT_PX, false);
+      cam.aspect = 1; cam.updateProjectionMatrix();
+      r.render(three.scene, cam);
+      var t = canvasWithBg(EXPORT_PX, EXPORT_PX);
+      t.ctx.drawImage(r.domElement, 0, 0);
+      saveCanvas(t.canvas, exportName());
+    } finally {
+      r.setPixelRatio(prevRatio);
+      r.setSize(prev.x, prev.y, false);
+      cam.aspect = prevAspect; cam.updateProjectionMatrix();
+      if (hadSel) updateSelection3D();
+      r.render(three.scene, cam);
+    }
+  }
+
+  function exportJPEG(){
+    if (state.mode === '3d'){
+      if (!three){ flash('Nothing to export — the 3D view has not loaded.'); return; }
+      export3D();
+    } else {
+      export2D();
+    }
   }
 
   /* ---------- palette ---------- */
@@ -802,6 +900,7 @@
     state.selected.clear();
     refreshSelection(); updateHint();
   });
+  document.getElementById('exportBtn').addEventListener('click', exportJPEG);
   document.getElementById('resetBtn').addEventListener('click', function(){
     state.spokeColors = freshSpokeColors(state.count);
     state.selected.clear();
