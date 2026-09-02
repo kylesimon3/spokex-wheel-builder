@@ -4,99 +4,274 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>SpokeX Wheel Builder — POC</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" />
 <style>
-  :root { --panel:#fff; --ink:#1c1c1c; --line:#d9d9d9; --accent:#1e66ff; }
+  /* The content here is eleven intensely saturated anodized colours and a
+     coloured wheel, so the chrome is deliberately achromatic -- cool-biased
+     neutrals, with one steel blue reserved for selection and focus and used
+     nowhere decoratively. Anything more would compete with the product. */
+  :root {
+    color-scheme: light dark;
+    --bg:#eef0f2; --panel:#ffffff; --sunk:#f5f6f8;
+    --ink:#16181b; --muted:#6b7480; --faint:#98a1ab;
+    --line:#d8dce0; --line-soft:#e7eaed;
+    --accent:#2b6cb0; --accent-soft:#e4edf7; --accent-ink:#ffffff;
+    --shadow:0 1px 2px rgba(16,18,21,.06), 0 10px 30px rgba(16,18,21,.08);
+    --sw-ring:rgba(0,0,0,.20);
+    --r:10px;
+    --ui:"Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:#15171a; --panel:#1c1f23; --sunk:#212529;
+      --ink:#e9ecef; --muted:#98a1ab; --faint:#79828d;
+      --line:#2b3037; --line-soft:#23272c;
+      --accent:#6fa8e6; --accent-soft:#1d2a38; --accent-ink:#0e1319;
+      --shadow:0 1px 2px rgba(0,0,0,.45), 0 10px 30px rgba(0,0,0,.35);
+      --sw-ring:rgba(255,255,255,.24);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#15171a; --panel:#1c1f23; --sunk:#212529;
+    --ink:#e9ecef; --muted:#98a1ab; --faint:#79828d;
+    --line:#2b3037; --line-soft:#23272c;
+    --accent:#6fa8e6; --accent-soft:#1d2a38; --accent-ink:#0e1319;
+    --shadow:0 1px 2px rgba(0,0,0,.45), 0 10px 30px rgba(0,0,0,.35);
+    --sw-ring:rgba(255,255,255,.24);
+  }
+
   * { box-sizing:border-box; }
   html, body { margin:0; height:100%; }
   body {
-    font:14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    color:var(--ink); background:#ececec; display:flex; flex-direction:column; min-height:100%;
+    font:400 14px/1.5 var(--ui);
+    color:var(--ink); background:var(--bg);
+    -webkit-font-smoothing:antialiased;
+  }
+  [hidden] { display:none !important; }
+  :where(button, select, a):focus-visible {
+    outline:2px solid var(--accent); outline-offset:2px; border-radius:6px;
   }
 
-  header.bar {
-    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
-    padding:11px 18px; background:var(--panel); border-bottom:1px solid var(--line);
-  }
-  header.bar h1 { font-size:15px; margin:0; font-weight:700; letter-spacing:.2px; white-space:nowrap; }
-  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
-  .seg button { appearance:none; border:0; background:#fff; padding:7px 13px; font:inherit; cursor:pointer; color:#555; }
-  .seg button.active { background:var(--ink); color:#fff; }
-  .btn { appearance:none; border:1px solid var(--line); background:#fff; border-radius:8px; padding:7px 13px; font:inherit; cursor:pointer; }
-  .btn:hover { background:#f5f5f5; }
-  .hint { color:#777; font-size:12.5px; flex:1 1 260px; min-width:220px; }
+  .app { height:100%; display:flex; flex-direction:column; }
 
-  main { flex:1; display:flex; align-items:center; justify-content:center; padding:18px; }
-  #stageWrap { position:relative; width:min(92vw, 72vh); aspect-ratio:1/1; }
+  /* ---- top bar: identity and the one control that changes what you look at */
+  .topbar {
+    flex:none; display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+    padding:12px 20px; background:var(--panel); border-bottom:1px solid var(--line);
+  }
+  .brand { display:flex; align-items:baseline; gap:9px; margin-right:auto; }
+  .brand-name { font-weight:700; font-size:16px; letter-spacing:-.01em; }
+  .brand-sub {
+    font-size:11px; text-transform:uppercase; letter-spacing:.14em; color:var(--faint);
+  }
+
+  .seg { display:inline-flex; background:var(--sunk); border:1px solid var(--line); border-radius:9px; padding:2px; gap:2px; }
+  .seg button {
+    appearance:none; border:0; background:transparent; color:var(--muted);
+    font:500 13px/1 var(--ui); padding:8px 14px; border-radius:7px; cursor:pointer;
+  }
+  .seg button:hover { color:var(--ink); }
+  .seg button.active { background:var(--panel); color:var(--ink); box-shadow:0 1px 2px rgba(16,18,21,.10); }
+  .seg.fill { display:grid; grid-template-columns:1fr 1fr; width:100%; }
+  .seg.fill button { text-align:center; }
+  .seg .n { font-family:var(--mono); font-weight:500; }
+
+  /* ---- workspace: the wheel is the subject, one column holds every control */
+  .workspace { flex:1; display:flex; min-height:0; }
+  .stage-col {
+    flex:1; min-width:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:14px; padding:22px;
+  }
+  #stageWrap { position:relative; width:min(100%, calc(100vh - 168px)); aspect-ratio:1/1; }
   #stage2d, #stage3d {
-    position:absolute; inset:0; border-radius:12px; overflow:hidden; background:#fff;
-    box-shadow:0 2px 12px rgba(0,0,0,.14), inset 0 0 0 1px rgba(0,0,0,.06);
-    transition:background-color .15s ease;
+    position:absolute; inset:0; border-radius:14px; overflow:hidden; background:#fff;
+    box-shadow:var(--shadow); transition:background-color .15s ease;
   }
   #stage3d { touch-action:none; }
   #wheel2d { width:100%; height:100%; display:block; }
-  [hidden] { display:none !important; }
+  .status {
+    margin:0; min-height:20px; font-size:13px; color:var(--muted); text-align:center;
+    max-width:60ch;
+  }
+  .status.ok { color:#1c7c3f; }
+  .status.warn { color:#c0392b; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .status.ok { color:#63c98d; }
+    :root:not([data-theme="light"]) .status.warn { color:#f0836f; }
+  }
+  :root[data-theme="dark"] .status.ok { color:#63c98d; }
+  :root[data-theme="dark"] .status.warn { color:#f0836f; }
+
+  .panel {
+    flex:none; width:344px; background:var(--panel); border-left:1px solid var(--line);
+    overflow-y:auto; display:flex; flex-direction:column;
+  }
+  .group { padding:18px 20px; border-bottom:1px solid var(--line-soft); display:flex; flex-direction:column; gap:12px; }
+  .group:last-child { border-bottom:0; }
+  .group-title {
+    margin:0; font-size:11px; font-weight:600; text-transform:uppercase;
+    letter-spacing:.14em; color:var(--faint);
+  }
+  .field { display:flex; flex-direction:column; gap:7px; }
+  .field-label { font-size:12px; font-weight:500; color:var(--muted); }
+
+  .select {
+    appearance:none; width:100%; font:500 14px/1 var(--ui); color:var(--ink);
+    background:var(--sunk); border:1px solid var(--line); border-radius:9px;
+    padding:11px 34px 11px 12px; cursor:pointer;
+    background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+    background-position:calc(100% - 17px) 50%, calc(100% - 12px) 50%;
+    background-size:5px 5px, 5px 5px; background-repeat:no-repeat;
+  }
+
+  .swatches { display:grid; grid-template-columns:repeat(6, 1fr); gap:9px; }
+  .sw {
+    aspect-ratio:1/1; width:100%; border-radius:50%; cursor:pointer; padding:0;
+    border:1px solid var(--sw-ring); appearance:none; position:relative;
+  }
+  .sw:hover { transform:scale(1.06); }
+  .sw.selected { box-shadow:0 0 0 2px var(--panel), 0 0 0 4px var(--accent); }
+  .readout {
+    display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+    padding:9px 11px; background:var(--sunk); border-radius:8px; min-height:36px;
+  }
+  .readout .nm { font-size:13px; font-weight:500; }
+  .readout .hex { font:500 12px/1 var(--mono); color:var(--muted); text-transform:uppercase; }
+
+  .tip { margin:0; font-size:12.5px; line-height:1.55; color:var(--muted); }
+  .btn-row { display:flex; gap:8px; }
+  .btn {
+    appearance:none; flex:1; font:500 13px/1 var(--ui); color:var(--ink);
+    background:var(--panel); border:1px solid var(--line); border-radius:9px;
+    padding:10px 12px; cursor:pointer;
+  }
+  .btn:hover { background:var(--sunk); }
+  .btn-primary {
+    background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:600;
+    width:100%; padding:12px;
+  }
+  .btn-primary:hover { filter:brightness(1.07); background:var(--accent); }
+  .btn-quiet { color:var(--muted); }
+
+  .steps { margin:0; padding:0; list-style:none; counter-reset:step; display:flex; flex-direction:column; gap:10px; }
+  .steps li {
+    counter-increment:step; position:relative; padding-left:26px;
+    font-size:12.5px; line-height:1.55; color:var(--muted);
+  }
+  .steps li::before {
+    content:counter(step); position:absolute; left:0; top:0;
+    width:18px; height:18px; border-radius:50%; background:var(--sunk); color:var(--ink);
+    font:500 10px/18px var(--mono); text-align:center;
+  }
+  .steps b { color:var(--ink); font-weight:600; }
 
   .spoke-hit, .hit { stroke:transparent; stroke-width:26; cursor:pointer; pointer-events:stroke; }
   .selglow { animation:selpulse 1.4s ease-in-out infinite; }
   @keyframes selpulse { 0%,100%{opacity:.30} 50%{opacity:.62} }
+  @media (prefers-reduced-motion: reduce) {
+    .selglow { animation:none; opacity:.5; }
+    .sw:hover { transform:none; }
+  }
 
-  #threeMsg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:24px; color:#666; }
+  #threeMsg { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:24px; color:var(--muted); }
   .chip3d {
-    position:absolute; left:10px; bottom:10px; font-size:11px; color:#666;
-    background:rgba(255,255,255,.72); padding:4px 8px; border-radius:6px; pointer-events:none;
+    position:absolute; left:12px; bottom:12px; font:400 11px/1 var(--ui); color:var(--muted);
+    background:var(--panel); border:1px solid var(--line);
+    padding:6px 9px; border-radius:6px; pointer-events:none;
   }
 
-  footer.palette { background:var(--panel); border-top:1px solid var(--line); padding:12px 18px 16px; display:flex; flex-direction:column; gap:11px; }
-  .row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-  .row > .label { width:110px; min-width:110px; font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.6px; color:#666; }
-  .swatches { display:flex; gap:8px; flex-wrap:wrap; }
-  .sw { width:34px; height:34px; border-radius:50%; border:2px solid rgba(0,0,0,.15); cursor:pointer; position:relative; padding:0; appearance:none; }
-  .sw.selected { outline:3px solid var(--ink); outline-offset:2px; }
-  .sw .nm {
-    position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(-50%);
-    background:#1c1c1c; color:#fff; font-size:11px; padding:3px 6px; border-radius:4px;
-    white-space:nowrap; opacity:0; pointer-events:none; transition:opacity .1s ease;
+  @media (max-width: 940px) {
+    .workspace { flex-direction:column; }
+    #stageWrap { width:min(100%, 58vh); }
+    .panel { width:100%; border-left:0; border-top:1px solid var(--line); }
+    #stageWrap { width:min(100%, 58vh); }
+    .swatches { grid-template-columns:repeat(11, 1fr); }
   }
-  .sw:hover .nm { opacity:1; }
+  @media (max-width: 560px) {
+    .swatches { grid-template-columns:repeat(6, 1fr); }
+  }
 </style>
 </head>
-<body>
-  <header class="bar">
-    <h1>SpokeX Wheel Builder</h1>
-    <div class="seg" id="countSeg">
-      <button data-count="32" class="active">32 spoke</button>
-      <button data-count="28">28 spoke</button>
-    </div>
-    <div class="seg" id="modeSeg">
-      <button data-mode="2d" class="active">2D</button>
-      <button data-mode="3d">3D</button>
-    </div>
-    <button class="btn" id="selAllBtn">Select all</button>
-    <button class="btn" id="deselBtn">Deselect</button>
-    <button class="btn" id="resetBtn">Reset</button>
-    <button class="btn" id="exportBtn">Export JPEG</button>
-    <span class="hint" id="hint">Click spokes to select, then choose a Spoke color. Toggle 3D to spin the wheel.</span>
-  </header>
-
-  <main>
-    <div id="stageWrap">
-      <div id="stage2d">
-        <svg id="wheel2d" viewBox="0 0 1000 1000" role="img" aria-label="Bike wheel spoke customizer"></svg>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-name">SpokeX</span>
+        <span class="brand-sub">Wheel Builder</span>
       </div>
-      <div id="stage3d" hidden>
-        <div class="chip3d">drag to spin · scroll to zoom · click a spoke to select</div>
-        <div id="threeMsg" hidden>3D view needs the three.js library, which could not be loaded (CDN blocked).</div>
+      <div class="seg" id="modeSeg" role="group" aria-label="View mode">
+        <button data-mode="2d" class="active">2D</button>
+        <button data-mode="3d">3D</button>
       </div>
-    </div>
-  </main>
+    </header>
 
-  <footer class="palette">
-    <div class="row"><span class="label">Spoke color</span><div class="swatches" id="spokeRow"></div></div>
-    <div class="row"><span class="label">Hub color</span><div class="swatches" id="hubRow"></div></div>
-    <div class="row"><span class="label">Valve color</span><div class="swatches" id="valveRow"></div></div>
-    <div class="row"><span class="label">Decal color</span><div class="swatches" id="decalRow"></div></div>
-    <div class="row"><span class="label">Background</span><div class="swatches" id="bgRow"></div></div>
-  </footer>
+    <main class="workspace">
+      <section class="stage-col">
+        <div id="stageWrap">
+          <div id="stage2d">
+            <svg id="wheel2d" viewBox="0 0 1000 1000" role="img" aria-label="Bike wheel spoke customizer"></svg>
+          </div>
+          <div id="stage3d" hidden>
+            <div class="chip3d">drag to spin · scroll to zoom · click a spoke to select</div>
+            <div id="threeMsg" hidden>3D view needs the three.js library, which could not be loaded (CDN blocked).</div>
+          </div>
+        </div>
+        <p class="status" id="hint"></p>
+      </section>
+
+      <aside class="panel" aria-label="Wheel configuration">
+        <section class="group">
+          <h2 class="group-title">Build</h2>
+          <div class="field">
+            <span class="field-label">Spoke count</span>
+            <div class="seg fill" id="countSeg" role="group" aria-label="Spoke count">
+              <button data-count="32" class="active"><span class="n">32</span> spoke</button>
+              <button data-count="28"><span class="n">28</span> spoke</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="group">
+          <h2 class="group-title">Colour</h2>
+          <div class="field">
+            <label class="field-label" for="targetSel">Part to colour</label>
+            <select class="select" id="targetSel"></select>
+          </div>
+          <div class="swatches" id="paletteRow"></div>
+          <div class="readout"><span class="nm" id="swName">—</span><span class="hex" id="swHex"></span></div>
+          <div id="spokeTools" class="field">
+            <p class="tip">Click spokes in the wheel to pick out individual ones. With none selected, a colour applies to <b>all</b> spokes.</p>
+            <div class="btn-row">
+              <button class="btn" id="selAllBtn">Select all</button>
+              <button class="btn" id="deselBtn">Deselect</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="group">
+          <h2 class="group-title">Export</h2>
+          <button class="btn btn-primary" id="exportBtn">Export JPEG</button>
+          <p class="tip">Saves whichever view you are looking at — 2D or 3D — as a <b>2000 × 2000</b> JPEG. The blue selection glow is left out, so deselecting first is not necessary.</p>
+        </section>
+
+        <section class="group">
+          <h2 class="group-title">How to use</h2>
+          <ol class="steps">
+            <li>Choose <b>32</b> or <b>28 spoke</b>. Lacing follows: 3-cross and 2-cross.</li>
+            <li>Pick a <b>part to colour</b>, then a swatch. Repeat for the hub, valve and rim decal.</li>
+            <li>For alternating spokes, click them in the wheel first, then choose a colour.</li>
+            <li>Switch to <b>3D</b> to spin the wheel and check it from any angle.</li>
+            <li>Hit <b>Export JPEG</b> when you are happy with it.</li>
+          </ol>
+        </section>
+
+        <section class="group">
+          <button class="btn btn-quiet" id="resetBtn">Reset everything</button>
+        </section>
+      </aside>
+    </main>
+  </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>if(!window.THREE){document.write('<scr'+'ipt src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/scr'+'ipt>');}</script>
@@ -421,7 +596,6 @@
     bg: "#ffffff",
     mode: "2d"
   };
-  var activeSpokeColor = null;
 
   /* ---------- geometry: spoke lacing (3-cross for 32h, 2-cross for 28h) ---------- */
   function buildSpokes(N){
@@ -1118,6 +1292,7 @@
   }
 
   function toggleSpoke(i){
+    focusSpokeTarget();
     if (state.selected.has(i)) state.selected.delete(i); else state.selected.add(i);
     refreshSelection();
     updateHint();
@@ -1125,16 +1300,21 @@
 
   function updateHint(){
     var n = state.selected.size;
-    hint.style.color = '';
-    hint.textContent = n
-      ? (n + ' spoke' + (n>1?'s':'') + ' selected — click a Spoke color to apply.')
-      : 'Click spokes to select, then choose a Spoke color. Toggle 3D to spin the wheel.';
+    hint.className = 'status';
+    if (n){
+      hint.textContent = n + ' spoke' + (n>1?'s':'') + ' selected — now pick a colour.';
+    } else if (target && target.id === 'spokes'){
+      hint.textContent = 'Pick a colour to apply to every spoke, or click spokes first to choose your own.';
+    } else {
+      hint.textContent = 'Colouring the ' + (target ? target.label.toLowerCase() : 'wheel') + '.';
+    }
   }
   var hintTimer = null;
-  function flash(msg, tone){
-    hint.textContent = msg; hint.style.color = tone || '#d21f2b';
+  function flash(msg, good){
+    hint.textContent = msg;
+    hint.className = 'status ' + (good ? 'ok' : 'warn');
     if (hintTimer) clearTimeout(hintTimer);
-    hintTimer = setTimeout(updateHint, tone ? 2600 : 1600);
+    hintTimer = setTimeout(updateHint, good ? 2400 : 1800);
   }
 
   /* =====================================================================
@@ -1158,8 +1338,6 @@
     return 'spokex-wheel-' + state.count + 'h-' + state.mode + '.jpg';
   }
 
-  var OK_GREEN = '#1c7c3f';
-
   /* Two ways out, resolved once at startup.
 
      Served normally (GitHub Pages, a local server, file://) the ordinary
@@ -1181,7 +1359,7 @@
       downloadBridge.then(function(dl){
         if (dl){
           dl.save({ filename:name, data:blob }).then(
-            function(){ flash('Saved ' + name, OK_GREEN); },
+            function(){ flash('Saved ' + name, true); },
             function(err){
               var code = err && err.code;
               if (code === 'declined'){ updateHint(); return; }   // viewer said no
@@ -1198,7 +1376,7 @@
         document.body.removeChild(a);
         // revoke on a later tick; revoking synchronously can cancel the save
         setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
-        flash('Saved ' + name, OK_GREEN);
+        flash('Saved ' + name, true);
       });
     }, 'image/jpeg', EXPORT_QUALITY);
   }
@@ -1260,64 +1438,110 @@
     }
   }
 
-  /* ---------- palette ---------- */
+  /* ---------- palette --------------------------------------------------------
+     One swatch grid, one dropdown naming the part it drives. Five separate
+     rows of eleven swatches meant 55 targets on screen at once and no way to
+     tell which row you were in; this way the question "what am I colouring?"
+     is answered by a control instead of by position. */
   var hint = document.getElementById('hint');
-  var spokeRow = document.getElementById('spokeRow');
-  var hubRow = document.getElementById('hubRow');
-  var valveRow = document.getElementById('valveRow');
-  var decalRow = document.getElementById('decalRow');
-  var bgRow = document.getElementById('bgRow');
+  var paletteRow = document.getElementById('paletteRow');
+  var targetSel = document.getElementById('targetSel');
+  var spokeTools = document.getElementById('spokeTools');
+  var swName = document.getElementById('swName');
+  var swHex = document.getElementById('swHex');
 
-  function markSelected(container, node){
-    Array.prototype.forEach.call(container.children, function(ch){ ch.classList.toggle('selected', ch === node); });
+  var TARGETS = [
+    { id:'spokes', label:'Spokes',     colors:SPOKEX_COLORS, ano:true },
+    { id:'hub',    label:'Hub',        colors:SPOKEX_COLORS, ano:true },
+    { id:'valve',  label:'Valve stem', colors:SPOKEX_COLORS, ano:true },
+    { id:'decal',  label:'Rim decal',  colors:SPOKEX_COLORS, ano:true },
+    { id:'bg',     label:'Background', colors:BG_COLORS,     ano:false }
+  ];
+  var target = TARGETS[0];
+
+  TARGETS.forEach(function(t){
+    var o = document.createElement('option');
+    o.value = t.id; o.textContent = t.label;
+    targetSel.appendChild(o);
+  });
+
+  // What the chosen part is currently set to. Spokes can disagree with each
+  // other, in which case nothing is marked rather than one swatch lying.
+  function currentValue(){
+    if (target.id === 'hub')   return state.hubColor;
+    if (target.id === 'valve') return state.valveColor;
+    if (target.id === 'decal') return state.decalColor;
+    if (target.id === 'bg')    return state.bg;
+    var first = state.spokeColors[0];
+    return state.spokeColors.every(function(c){ return c === first; }) ? first : null;
   }
-  function buildRow(container, colors, onPick, initialHex, ano){
-    colors.forEach(function(c){
+  function colorName(hex){
+    if (!hex) return null;
+    for (var i = 0; i < target.colors.length; i++){
+      if (target.colors[i].hex.toLowerCase() === hex.toLowerCase()) return target.colors[i].name;
+    }
+    return null;
+  }
+  function showReadout(hex, name){
+    if (!hex){ swName.textContent = 'Mixed'; swHex.textContent = ''; return; }
+    swName.textContent = name || colorName(hex) || '—';
+    swHex.textContent = hex;
+  }
+
+  function applyColor(c){
+    if (target.id === 'hub'){ state.hubColor = c.hex; refreshHub(); flash('Hub set to ' + c.name, true); }
+    else if (target.id === 'valve'){ state.valveColor = c.hex; render2D(); if (three) syncColors3D(); flash('Valve set to ' + c.name, true); }
+    else if (target.id === 'decal'){ state.decalColor = c.hex; render2D(); if (three) syncDecal3D(); flash('Decal set to ' + c.name, true); }
+    else if (target.id === 'bg'){ setBg(c.hex); flash('Background set to ' + c.name, true); }
+    else {
+      // No selection means the whole wheel -- the old behaviour was to refuse
+      // and say "select some spokes first", which is a dead end that teaches
+      // nothing. Picking out individual spokes stays available and is what the
+      // panel tip and step 3 describe.
+      var all = state.selected.size === 0;
+      var n = all ? state.count : state.selected.size;
+      if (all) { for (var i = 0; i < state.count; i++) state.spokeColors[i] = c.hex; }
+      else state.selected.forEach(function(i){ state.spokeColors[i] = c.hex; });
+      state.selected.clear();
+      refreshSpokes();
+      flash('Applied ' + c.name + ' to ' + (all ? 'all ' : '') + n + ' spoke' + (n > 1 ? 's' : ''), true);
+    }
+    renderPalette();
+  }
+
+  function renderPalette(){
+    var cur = currentValue();
+    paletteRow.innerHTML = '';
+    target.colors.forEach(function(c){
       var b = document.createElement('button');
       b.className = 'sw';
-      // anodized swatches get the measured groove/specular ramp; flat
-      // background swatches stay flat so they read as the colour they set.
-      b.style.background = ano ? anoCss(c.hex, 100) : c.hex;
+      b.type = 'button';
+      // anodized parts get the measured groove/specular ramp; background
+      // swatches stay flat, since flat is what they actually set
+      b.style.background = target.ano ? anoCss(c.hex, 100) : c.hex;
       b.title = c.name;
-      b.innerHTML = '<span class="nm">' + c.name + '</span>';
-      if (initialHex && c.hex.toLowerCase() === initialHex.toLowerCase()) b.classList.add('selected');
-      b.addEventListener('click', function(){ onPick(c, b); });
-      container.appendChild(b);
+      b.setAttribute('aria-label', c.name);
+      if (cur && c.hex.toLowerCase() === cur.toLowerCase()) b.classList.add('selected');
+      b.addEventListener('click', function(){ applyColor(c); });
+      b.addEventListener('pointerenter', function(){ showReadout(c.hex, c.name); });
+      b.addEventListener('pointerleave', function(){ showReadout(currentValue()); });
+      paletteRow.appendChild(b);
     });
+    spokeTools.hidden = target.id !== 'spokes';
+    showReadout(cur);
   }
 
-  buildRow(spokeRow, SPOKEX_COLORS, function(c, node){
-    markSelected(spokeRow, node);
-    activeSpokeColor = c.hex;
-    if (state.selected.size === 0){ flash('Select one or more spokes first'); return; }
-    var applied = state.selected.size;
-    state.selected.forEach(function(i){ state.spokeColors[i] = c.hex; });
-    state.selected.clear();
-    refreshSpokes();
-    hint.style.color = '';
-    hint.textContent = 'Applied ' + c.name + ' to ' + applied + ' spoke' + (applied>1?'s':'') + '. Select more to keep going.';
-  }, null, true);
-  buildRow(hubRow, SPOKEX_COLORS, function(c, node){
-    markSelected(hubRow, node);
-    state.hubColor = c.hex;
-    refreshHub();
-  }, DEFAULT_HUB, true);
-  buildRow(valveRow, SPOKEX_COLORS, function(c, node){
-    markSelected(valveRow, node);
-    state.valveColor = c.hex;
-    render2D();
-    if (three) syncColors3D();
-  }, DEFAULT_HUB, true);
-  buildRow(decalRow, SPOKEX_COLORS, function(c, node){
-    markSelected(decalRow, node);
-    state.decalColor = c.hex;
-    render2D();
-    if (three) syncDecal3D();
-  }, "#cbcbcb", true);
-  buildRow(bgRow, BG_COLORS, function(c, node){
-    markSelected(bgRow, node);
-    setBg(c.hex);
-  }, '#ffffff');
+  targetSel.addEventListener('change', function(){
+    target = TARGETS.filter(function(t){ return t.id === targetSel.value; })[0] || TARGETS[0];
+    if (target.id !== 'spokes' && state.selected.size){ state.selected.clear(); refreshSelection(); }
+    renderPalette();
+    updateHint();
+  });
+  // clicking a spoke is itself a statement about what you want to colour
+  function focusSpokeTarget(){
+    if (target.id === 'spokes') return;
+    target = TARGETS[0]; targetSel.value = 'spokes'; renderPalette();
+  }
 
   /* ---------- top-bar controls ---------- */
   var countSeg = document.getElementById('countSeg');
@@ -1334,6 +1558,7 @@
     Array.prototype.forEach.call(countSeg.children, function(ch){ ch.classList.toggle('active', ch === btn); });
     render2D();
     if (three) buildWheel3D();
+    renderPalette();
     updateHint();
   });
 
@@ -1360,6 +1585,7 @@
   document.getElementById('selAllBtn').addEventListener('click', function(){
     state.selected = new Set();
     for (var i=0;i<state.count;i++) state.selected.add(i);
+    focusSpokeTarget();
     refreshSelection(); updateHint();
   });
   document.getElementById('deselBtn').addEventListener('click', function(){
@@ -1373,14 +1599,9 @@
     state.hubColor = DEFAULT_HUB;
     state.valveColor = DEFAULT_HUB;
     state.decalColor = "#cbcbcb";
-    activeSpokeColor = null;
-    markSelected(spokeRow, null);
-    Array.prototype.forEach.call(hubRow.children, function(ch, idx){ ch.classList.toggle('selected', idx === 0); });
-    Array.prototype.forEach.call(valveRow.children, function(ch, idx){ ch.classList.toggle('selected', idx === 0); });
-    Array.prototype.forEach.call(decalRow.children, function(ch, idx){ ch.classList.toggle('selected', idx === 1); });
-    Array.prototype.forEach.call(bgRow.children, function(ch, idx){ ch.classList.toggle('selected', idx === 0); });
     setBg('#ffffff');
     refreshSpokes();
+    renderPalette();
     updateHint();
   });
 
@@ -1574,6 +1795,8 @@
   /* ---------- go ---------- */
   updateValveDeg();
   setBg('#ffffff');
+  renderPalette();
+  updateHint();
   render2D();
 })();
 </script>
