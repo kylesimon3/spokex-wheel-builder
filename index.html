@@ -94,6 +94,7 @@
     <div class="row"><span class="label">Spoke color</span><div class="swatches" id="spokeRow"></div></div>
     <div class="row"><span class="label">Hub color</span><div class="swatches" id="hubRow"></div></div>
     <div class="row"><span class="label">Valve color</span><div class="swatches" id="valveRow"></div></div>
+    <div class="row"><span class="label">Decal color</span><div class="swatches" id="decalRow"></div></div>
     <div class="row"><span class="label">Background</span><div class="swatches" id="bgRow"></div></div>
   </footer>
 
@@ -149,6 +150,9 @@
     { name:"Orange",     hex:"#f26f1f" }
   ];
   var BLACK = "#2d2d2d";
+  // the band the keyline prints on: near-black, as on the real decal, but
+  // just light enough to separate from the rim behind it
+  var DECAL_BODY = "#343434";
   var DEFAULT_HUB = "#2d2d2d";
 
   /* ---------- color helpers ---------- */
@@ -280,6 +284,131 @@
     return '<image href="'+url+'" x="'+p+'" y="'+p+'" width="'+d+'" height="'+d+'"/>';
   }
 
+  /* ---------- rim decal -----------------------------------------------------
+     One "SPOKEX" decal lifted off the supplied sheet photo and straightened
+     (see the extractor note below). It is stored as a MASK so it can be
+     recoloured: R = the dark band the artwork prints on, G = the keyline
+     artwork, A = either. Real rim decals come in colourways where exactly that
+     keyline changes, so DECAL colour drives G and the band stays near-black.
+
+     The sheet was shot at an angle and each decal is manufactured curved, so
+     the strip was recovered by following the decal's solid ink band column by
+     column and resampling between its own top and bottom edges -- which undoes
+     the design curve and the photographic foreshortening together. What is
+     stored is straight; the curve below is applied fresh at the rim's radius,
+     so it fits whatever radius it is drawn at instead of carrying a baked-in
+     one that would not match. */
+  var DECAL_MASK_SRC = 'data:image/png;base64,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';
+  var DECAL_R_IN = 437, DECAL_R_OUT = 469;   // radii it spans in the 1000 viewBox
+  var DECAL_PX = 2;                          // canvas pixels per viewBox unit
+  var DECAL_ANGLES = [90, 270];              // clockwise from top
+
+  var decalMask = null, decalCache = {}, decalGeom = null;
+
+  (function loadDecal(){
+    if (typeof DECAL_MASK_SRC !== 'string' || !DECAL_MASK_SRC) return;
+    var img = new Image();
+    img.onload = function(){
+      var c = document.createElement('canvas');
+      c.width = img.width; c.height = img.height;
+      var g = c.getContext('2d');
+      g.drawImage(img, 0, 0);
+      decalMask = { w:img.width, h:img.height, d:g.getImageData(0,0,img.width,img.height).data };
+
+      // the decal keeps its own aspect: its length sets the arc it subtends
+      var band = DECAL_R_OUT - DECAL_R_IN;
+      var arc = band * (decalMask.w / decalMask.h) / ((DECAL_R_IN + DECAL_R_OUT) / 2);
+      var half = arc / 2;
+      var x0 = -DECAL_R_OUT * Math.sin(half);
+      var yTop = -DECAL_R_OUT, yBot = -DECAL_R_IN * Math.cos(half);
+      decalGeom = { arc:arc, half:half, x0:x0, yTop:yTop,
+                    w:-2*x0, h:yBot - yTop };
+      render2D();
+    };
+    img.onerror = function(){ decalMask = null; };   // fall back to the etched text
+    img.src = DECAL_MASK_SRC;
+  })();
+
+  // Bend the straight strip onto the rim, centred at the top of the wheel; the
+  // two placements are the same image rotated about the hub.
+  function decalImage(hex){
+    if (!decalMask || !decalGeom) return null;
+    if (decalCache[hex]) return decalCache[hex];
+    var G = decalGeom, M = decalMask;
+    var CW = Math.round(G.w * DECAL_PX), CH = Math.round(G.h * DECAL_PX);
+    var c = document.createElement('canvas'); c.width = CW; c.height = CH;
+    var ctx = c.getContext('2d');
+    var out = ctx.createImageData(CW, CH), o = out.data;
+    var tint = hexToRgb(hex), body = hexToRgb(DECAL_BODY);
+    var band = DECAL_R_OUT - DECAL_R_IN;
+    for (var cy = 0; cy < CH; cy++){
+      var wy = G.yTop + (cy + 0.5) / DECAL_PX;
+      for (var cx = 0; cx < CW; cx++){
+        var i = (cy*CW + cx) * 4;
+        var wx = G.x0 + (cx + 0.5) / DECAL_PX;
+        var r = Math.sqrt(wx*wx + wy*wy);
+        if (r < DECAL_R_IN || r > DECAL_R_OUT){ o[i+3] = 0; continue; }
+        var th = Math.atan2(wx, -wy);
+        if (th < -G.half || th > G.half){ o[i+3] = 0; continue; }
+        // outward on the rim is the top of the wordmark
+        var u = (0.5 + th / G.arc) * (M.w - 1);
+        var v = ((DECAL_R_OUT - r) / band) * (M.h - 1);
+        var xi = Math.floor(u), yi = Math.floor(v);
+        var fx = u - xi, fy = v - yi;
+        var xj = Math.min(xi+1, M.w-1), yj = Math.min(yi+1, M.h-1);
+        var bR = 0, gR = 0;
+        for (var k = 0; k < 4; k++){
+          var sx = k & 1 ? xj : xi, sy = k & 2 ? yj : yi;
+          var wgt = (k & 1 ? fx : 1-fx) * (k & 2 ? fy : 1-fy);
+          var si = (sy*M.w + sx) * 4;
+          bR += M.d[si] * wgt; gR += M.d[si+1] * wgt;
+        }
+        var bf = bR/255, gf = gR/255, a = Math.min(1, bf + gf);
+        if (a <= 0.004){ o[i+3] = 0; continue; }
+        o[i]   = (body.r*bf + tint.r*gf) / a;
+        o[i+1] = (body.g*bf + tint.g*gf) / a;
+        o[i+2] = (body.b*bf + tint.b*gf) / a;
+        o[i+3] = Math.round(a * 255);
+      }
+    }
+    ctx.putImageData(out, 0, 0);
+    var url = c.toDataURL('image/png');
+    decalCache[hex] = url;
+    return url;
+  }
+  function decalTags(hex){
+    var url = decalImage(hex);
+    if (!url) return null;
+    var G = decalGeom, s = '';
+    DECAL_ANGLES.forEach(function(deg){
+      s += '<g transform="rotate('+deg+' '+C+' '+C+')">'
+         + '<image href="'+url+'" x="'+f2(C+G.x0)+'" y="'+f2(C+G.yTop)+'"'
+         + ' width="'+f2(G.w)+'" height="'+f2(G.h)+'"/></g>';
+    });
+    return s;
+  }
+
+  // The straight strip, tinted. 2D bends it with a warp; 3D maps it onto ribbon
+  // geometry that carries the curve, so both share this one recolouring step.
+  function paintDecalStrip(canvas, hex){
+    if (!decalMask) return false;
+    var M = decalMask;
+    canvas.width = M.w; canvas.height = M.h;
+    var ctx = canvas.getContext('2d');
+    var out = ctx.createImageData(M.w, M.h), o = out.data;
+    var tint = hexToRgb(hex), body = hexToRgb(DECAL_BODY);
+    for (var i = 0; i < M.w*M.h*4; i += 4){
+      var bf = M.d[i]/255, gf = M.d[i+1]/255, a = Math.min(1, bf + gf);
+      if (a <= 0.004){ o[i+3] = 0; continue; }
+      o[i]   = (body.r*bf + tint.r*gf) / a;
+      o[i+1] = (body.g*bf + tint.g*gf) / a;
+      o[i+2] = (body.b*bf + tint.b*gf) / a;
+      o[i+3] = Math.round(a * 255);
+    }
+    ctx.putImageData(out, 0, 0);
+    return true;
+  }
+
   /* ---------- state ---------- */
   function freshSpokeColors(n){ var a=[]; for(var i=0;i<n;i++) a.push(BLACK); return a; }
   var state = {
@@ -288,6 +417,7 @@
     selected: new Set(),
     hubColor: DEFAULT_HUB,
     valveColor: DEFAULT_HUB,
+    decalColor: "#cbcbcb",
     bg: "#ffffff",
     mode: "2d"
   };
@@ -408,10 +538,16 @@
     if (!only) {
     out.push('<g>');
     out.push(circleF(C,C,454,'none','url(#rimSheen)',48));
-    out.push('<text font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="20" letter-spacing="10" fill="#767676" fill-opacity="0.5">'
-      + '<textPath href="#rimArc" startOffset="21%">SpokeX</textPath></text>');
-    out.push('<text font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="20" letter-spacing="10" fill="#767676" fill-opacity="0.5">'
-      + '<textPath href="#rimArc" startOffset="71%">SpokeX</textPath></text>');
+    var dec = decalTags(state.decalColor);
+    if (dec){
+      out.push(dec);
+    } else {
+      // until the decal art decodes (or if it fails to), keep the etched text
+      out.push('<text font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="20" letter-spacing="10" fill="#767676" fill-opacity="0.5">'
+        + '<textPath href="#rimArc" startOffset="21%">SpokeX</textPath></text>');
+      out.push('<text font-family="Arial, Helvetica, sans-serif" font-weight="700" font-size="20" letter-spacing="10" fill="#767676" fill-opacity="0.5">'
+        + '<textPath href="#rimArc" startOffset="71%">SpokeX</textPath></text>');
+    }
     out.push(circleF(C,C,431,'none','#e6e6e6',2).replace('/>',' stroke-opacity="0.40"/>'));   // bright inner bead
     out.push(circleF(C,C,477,'none','#000',2).replace('/>',' stroke-opacity="0.60"/>'));      // outer edge
     out.push(circleF(C,C,470,'none','#fff',3).replace('/>',' stroke-opacity="0.05"/>'));      // faint outer sheen
@@ -531,6 +667,17 @@
      3D  (three.js)
      ===================================================================== */
   var FLANGE_R3D = 30, FLANGE_Z = 24, RIM_R3D = 452;
+  // A rim is a revolved extrusion, not a tube: flat tapered sidewalls, a bead
+  // hook at the outer edge and a dropped tyre well between the bead seats.
+  // The torus this replaces had a circular section, which is exactly why it
+  // read as a doughnut rather than a wheel.
+  var RIM_BED  = RIM_R3D - 18;   // spoke bed, the inner surface spokes pull on
+  var RIM_EDGE = RIM_R3D + 22;   // outer bead edge
+  var RIM_FACE_IN = 446, RIM_FACE_OUT = 468;   // the flat sidewall band decals sit on
+  function rimFaceZ(r){          // that band is very slightly conical
+    var t = (r - 444) / (RIM_EDGE - 3 - 444);
+    return 17 + t * 2;
+  }
   var three = null;
   var three_lights = null;
   var _up = null;
@@ -622,14 +769,68 @@
     three.spokeMeshes = [];
     three.hubColorParts = [];
 
-    var rim = new THREE.Mesh(
-      new THREE.TorusGeometry(RIM_R3D, 18, 20, 160),
-      // matte black alloy: same mid-tone as the 2D rimSheen gradient, but
-      // rougher than the anodized parts so it stays flat next to them
-      anoMat('#1e1e1e', { roughness:0.72, metalness:0.12 })
-    );
-    rim.castShadow = true; rim.receiveShadow = true;
+    // rim cross-section, revolved: spoke bed -> sidewall -> bead hook -> tyre
+    // well -> back down the far side, closed so it reads as a solid section
+    var E = RIM_EDGE, R = RIM_R3D, BED = RIM_BED;
+    var rimProfile = [
+      [BED,     -12  ], [BED+2,   -15  ], [R-8,     -17  ], [R+12,    -18.8],
+      [E-3,     -19  ], [E,       -17.5], [E-1.5,   -14  ], [E-6,     -13  ],
+      [R+6,      -9  ], [R+2,      -6  ], [R+1,       0  ], [R+2,       6  ],
+      [R+6,       9  ], [E-6,      13  ], [E-1.5,    14  ], [E,        17.5],
+      [E-3,      19  ], [R+12,     18.8], [R-8,      17  ], [BED+2,    15  ],
+      [BED,      12  ], [BED-1,     6  ], [BED-1,    -6  ], [BED,     -12  ]
+    ];
+    // matte black alloy: rougher than the anodized parts so it stays flat
+    // next to them
+    var rim = lathe(rimProfile, anoMat('#1e1e1e', { roughness:0.62, metalness:0.25 }), 168);
+    rim.receiveShadow = true;
     g.add(rim);
+
+    /* rim decals: ribbons lying on the sidewall band, one per side at each
+       placement so the wordmark is there whichever way the wheel is turned.
+       The strip texture stays straight -- the geometry carries the curve, which
+       is why it sits flat on the slightly conical sidewall instead of floating. */
+    three.decalTex = null;
+    (function(){
+      if (!decalMask) return;
+      var cv = document.createElement('canvas');
+      if (!paintDecalStrip(cv, state.decalColor)) return;
+      var tex = new THREE.CanvasTexture(cv);
+      tex.anisotropy = three.renderer.capabilities.getMaxAnisotropy();
+      three.decalTex = tex; three.decalCanvas = cv;
+      var band = RIM_FACE_OUT - RIM_FACE_IN;
+      var arc = band * (decalMask.w / decalMask.h) / ((RIM_FACE_IN + RIM_FACE_OUT) / 2);
+      var SEG = 64;
+      var mat = new THREE.MeshStandardMaterial({
+        map: tex, transparent: true, depthWrite: false,
+        roughness: 0.42, metalness: 0.10, side: THREE.DoubleSide
+      });
+      DECAL_ANGLES.forEach(function(deg){
+        [1, -1].forEach(function(side){
+          var pos = [], uv = [], idx = [];
+          for (var i = 0; i <= SEG; i++){
+            var u = i / SEG;
+            // mirrored on the far side so it reads the right way round there
+            var th = deg*Math.PI/180 + (u - 0.5) * arc * side;
+            for (var j = 0; j < 2; j++){
+              var r = j === 0 ? RIM_FACE_OUT : RIM_FACE_IN;
+              var z = side * (rimFaceZ(r) + 0.8);   // just proud of the sidewall
+              pos.push(r*Math.sin(th), r*Math.cos(th), z);
+              uv.push(u, 1 - j);
+            }
+          }
+          for (var k = 0; k < SEG; k++){
+            var a = k*2; idx.push(a, a+1, a+2, a+1, a+3, a+2);
+          }
+          var geo = new THREE.BufferGeometry();
+          geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+          geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+          geo.setIndex(idx);
+          geo.computeVertexNormals();
+          g.add(new THREE.Mesh(geo, mat));
+        });
+      });
+    })();
 
     /* ---- hub: turned from lathe profiles rather than raw cylinders --------
        The reference hub waists inward between the flanges and carries a
@@ -715,11 +916,11 @@
         g.add(m); three.valveParts.push(m);
         return m;
       }
-      seg(441, 428, new THREE.CylinderGeometry(4.8, 4.8, 1, 16));   // rim collar / nut
-      seg(432, 392, new THREE.CylinderGeometry(3.2, 2.7, 1, 14));   // stem
+      seg(RIM_BED + 4, RIM_BED - 8, new THREE.CylinderGeometry(4.8, 4.8, 1, 16));  // rim nut
+      seg(RIM_BED - 4, RIM_BED - 44, new THREE.CylinderGeometry(3.2, 2.7, 1, 14)); // stem
       var tip = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 1, 10),
         new THREE.MeshStandardMaterial({ color:0x8f8f8f, metalness:0.6, roughness:0.3 }));
-      orient(tip, dir.clone().multiplyScalar(392), dir.clone().multiplyScalar(384));
+      orient(tip, dir.clone().multiplyScalar(RIM_BED-44), dir.clone().multiplyScalar(RIM_BED-52));
       g.add(tip);
     })();
 
@@ -728,7 +929,7 @@
     three.spokeGeo = baseGeo;
     spokes.forEach(function(s,i){
       var from = v3(FLANGE_R3D, s.hubDeg, s.near ? FLANGE_Z : -FLANGE_Z);
-      var to   = v3(RIM_R3D,    s.rimDeg, 0);
+      var to   = v3(RIM_BED + 2, s.rimDeg, 0);   // nipple sits in the bed
       var m = new THREE.Mesh(baseGeo, anoMat(state.spokeColors[i] || BLACK, { emissive:new THREE.Color(0x000000) }));
       m.castShadow = true;
       m.userData.i = i;
@@ -890,6 +1091,10 @@
     three.hubColorParts.forEach(function(m){ m.material.color.set(state.hubColor); });
     if (three.valveParts) three.valveParts.forEach(function(m){ m.material.color.set(state.valveColor); });
     three.scene.background.set(state.bg);
+  }
+  function syncDecal3D(){
+    if (!three || !three.decalTex) return;
+    if (paintDecalStrip(three.decalCanvas, state.decalColor)) three.decalTex.needsUpdate = true;
   }
   function updateSelection3D(){
     if (!three) return;
@@ -1060,6 +1265,7 @@
   var spokeRow = document.getElementById('spokeRow');
   var hubRow = document.getElementById('hubRow');
   var valveRow = document.getElementById('valveRow');
+  var decalRow = document.getElementById('decalRow');
   var bgRow = document.getElementById('bgRow');
 
   function markSelected(container, node){
@@ -1102,6 +1308,12 @@
     render2D();
     if (three) syncColors3D();
   }, DEFAULT_HUB, true);
+  buildRow(decalRow, SPOKEX_COLORS, function(c, node){
+    markSelected(decalRow, node);
+    state.decalColor = c.hex;
+    render2D();
+    if (three) syncDecal3D();
+  }, "#cbcbcb", true);
   buildRow(bgRow, BG_COLORS, function(c, node){
     markSelected(bgRow, node);
     setBg(c.hex);
@@ -1160,10 +1372,12 @@
     state.selected.clear();
     state.hubColor = DEFAULT_HUB;
     state.valveColor = DEFAULT_HUB;
+    state.decalColor = "#cbcbcb";
     activeSpokeColor = null;
     markSelected(spokeRow, null);
     Array.prototype.forEach.call(hubRow.children, function(ch, idx){ ch.classList.toggle('selected', idx === 0); });
     Array.prototype.forEach.call(valveRow.children, function(ch, idx){ ch.classList.toggle('selected', idx === 0); });
+    Array.prototype.forEach.call(decalRow.children, function(ch, idx){ ch.classList.toggle('selected', idx === 1); });
     Array.prototype.forEach.call(bgRow.children, function(ch, idx){ ch.classList.toggle('selected', idx === 0); });
     setBg('#ffffff');
     refreshSpokes();
