@@ -187,7 +187,7 @@
     #stageWrap { width:min(100%, 58vh); }
     .panel { width:100%; border-left:0; border-top:1px solid var(--line); }
     #stageWrap { width:min(100%, 58vh); }
-    .swatches { grid-template-columns:repeat(11, 1fr); }
+    .swatches { grid-template-columns:repeat(12, 1fr); }
   }
   @media (max-width: 560px) {
     .swatches { grid-template-columns:repeat(6, 1fr); }
@@ -299,8 +299,9 @@
 
      Nobody publishes hex values for anodizing, and it genuinely varies batch to
      batch, between alloys, and across a single day's run, so treat these as the
-     centre of a distribution rather than a spec. A twelfth chip, a bronze at
-     #7e4a1b, was measured but is unused here. */
+     centre of a distribution rather than a spec. A twelfth chip on the sheet, a
+     bronze, measured #7e4a1b; it is not in the list below -- see
+     SPOKE_HUB_EXTRA, which is a different value from a different source. */
   var SPOKEX_COLORS = [
     { name:"Black",     hex:"#2d2d2d" },
     { name:"Silver",    hex:"#cbcbcb" },
@@ -314,6 +315,20 @@
     { name:"Purple",    hex:"#941dad" },
     { name:"Pink",      hex:"#ee47af" }
   ];
+  /* Offered on the spokes and hub only, at request -- the valve and rim decal
+     deliberately stay on the eleven above.
+
+     Unlike those, this hex was SUPPLIED rather than measured, so it carries
+     none of the provenance the block above describes: do not read it as the
+     median of a photographed chip. It is close in family to the bronze chip on
+     the sheet but a good deal lighter and more golden than the #7e4a1b that one
+     measured, which is why it is named and kept separately instead of being
+     folded in as a twelfth "measured" colour. */
+  var SPOKE_HUB_EXTRA = [
+    { name:"Bronze", hex:"#b08337" }
+  ];
+  var SPOKE_HUB_COLORS = SPOKEX_COLORS.concat(SPOKE_HUB_EXTRA);
+
   var BG_COLORS = [
     { name:"White",      hex:"#ffffff" },
     { name:"Paper",      hex:"#f1efe9" },
@@ -1452,8 +1467,8 @@
   var swHex = document.getElementById('swHex');
 
   var TARGETS = [
-    { id:'spokes', label:'Spokes',     colors:SPOKEX_COLORS, ano:true },
-    { id:'hub',    label:'Hub',        colors:SPOKEX_COLORS, ano:true },
+    { id:'spokes', label:'Spokes',     colors:SPOKE_HUB_COLORS, ano:true },
+    { id:'hub',    label:'Hub',        colors:SPOKE_HUB_COLORS, ano:true },
     { id:'valve',  label:'Valve stem', colors:SPOKEX_COLORS, ano:true },
     { id:'decal',  label:'Rim decal',  colors:SPOKEX_COLORS, ano:true },
     { id:'bg',     label:'Background', colors:BG_COLORS,     ano:false }
@@ -1677,6 +1692,7 @@
 
   window.__wheel = {
     state: state, LIGHT: LIGHT, SPOKEX_COLORS: SPOKEX_COLORS,
+    SPOKE_HUB_COLORS: SPOKE_HUB_COLORS,
     ANO: { lo:ANO_LO, hi:ANO_HI },
     get3D: function(){ return three; },
     setAllSpokes: function(hex){
