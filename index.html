@@ -274,7 +274,7 @@
             </p>
           </div>
           <div id="spokeTools" class="field">
-            <p class="tip">Click spokes in the wheel to pick out individual ones. With none selected, a colour applies to <b>all</b> spokes.</p>
+            <p class="tip">Click spokes in the wheel to pick out individual ones — the selection covers each spoke <b>and its nipple</b>, so switch to Nipples and colour them without aiming at anything small. With none selected, a colour applies to <b>all</b> of them.</p>
             <div class="btn-row">
               <button class="btn" id="selAllBtn">Select all</button>
               <button class="btn" id="deselBtn">Deselect</button>
@@ -292,7 +292,7 @@
           <h2 class="group-title">How to use</h2>
           <ol class="steps">
             <li>Choose <b>32</b> or <b>28 spoke</b>. Lacing follows: 3-cross and 2-cross.</li>
-            <li>Pick a <b>part to colour</b>, then a swatch. Repeat for the hub, valve and rim decal.</li>
+            <li>Pick a <b>part to colour</b>, then a swatch. Repeat for the nipples, hub, valve and rim decal.</li>
             <li>For alternating spokes, click them in the wheel first, then choose a colour.</li>
             <li>Switch to <b>3D</b> to spin the wheel and check it from any angle.</li>
             <li>Hit <b>Export JPEG</b> when you are happy with it.</li>
@@ -333,7 +333,7 @@
      batch, between alloys, and across a single day's run, so treat these as the
      centre of a distribution rather than a spec. A twelfth chip on the sheet, a
      bronze, measured #7e4a1b; it is not in the list below -- see
-     SPOKE_HUB_EXTRA, which is a different value from a different source. */
+     ALLOY_EXTRA, which is a different value from a different source. */
   var SPOKEX_COLORS = [
     { name:"Black",     hex:"#2d2d2d" },
     { name:"Silver",    hex:"#cbcbcb" },
@@ -347,8 +347,8 @@
     { name:"Purple",    hex:"#941dad" },
     { name:"Pink",      hex:"#ee47af" }
   ];
-  /* Offered on the spokes and hub only, at request -- the valve and rim decal
-     deliberately stay on the eleven above.
+  /* Offered on the anodized alloy parts -- spokes, hub and nipples. The valve
+     and rim decal deliberately stay on the eleven above.
 
      Unlike those, this hex was SUPPLIED rather than measured, so it carries
      none of the provenance the block above describes: do not read it as the
@@ -356,10 +356,10 @@
      the sheet but a good deal lighter and more golden than the #7e4a1b that one
      measured, which is why it is named and kept separately instead of being
      folded in as a twelfth "measured" colour. */
-  var SPOKE_HUB_EXTRA = [
+  var ALLOY_EXTRA = [
     { name:"Bronze", hex:"#b08337" }
   ];
-  var SPOKE_HUB_COLORS = SPOKEX_COLORS.concat(SPOKE_HUB_EXTRA);
+  var ALLOY_COLORS = SPOKEX_COLORS.concat(ALLOY_EXTRA);
 
   var BG_COLORS = [
     { name:"White",      hex:"#ffffff" },
@@ -792,9 +792,14 @@
 
   /* ---------- state ---------- */
   function freshSpokeColors(n){ var a=[]; for(var i=0;i<n;i++) a.push(BLACK); return a; }
+  // Nipples are independent of the spokes rather than tinted from them, so
+  // "black spokes, silver nipples" and the reverse are both reachable. They
+  // share the selection set with the spokes: see focusSpokeTarget.
+  function freshNippleColors(n){ var a=[]; for(var i=0;i<n;i++) a.push(BLACK); return a; }
   var state = {
     count: 32,
     spokeColors: freshSpokeColors(32),
+    nippleColors: freshNippleColors(32),
     selected: new Set(),
     hubColor: DEFAULT_HUB,
     valveColor: DEFAULT_HUB,
@@ -961,15 +966,17 @@
     if (only) { wheel2d.innerHTML = out.join(''); return; }
     if (pick === 'hub') out.splice(1);    // keep defs, drop rim + spokes
 
-    /* ---- nipples (subtle, tinted to the spoke) ---- */
+    /* ---- nipples: their own colour, and lit by the spoke's selection ---- */
     if (!pick) {
-    var nips = '';
+    var nips = '', nipGlow = '';
     spokes.forEach(function(s,i){
       var a = polar(C,C,423,s.rimDeg), b = polar(C,C,434,s.rimDeg);
-      var col = state.spokeColors[i] || BLACK;
-      nips += blade(a,b,3.8,2.8, mix(col,'#7a7a7a',0.25), null, 0);
+      var col = state.nippleColors[i] || BLACK;
+      if (state.selected.has(i))
+        nipGlow += blade(a,b,11,10,'rgba(32,102,255,0.34)',null,0,' class="selglow"');
+      nips += blade(a,b,3.8,2.8, col, anoLo(col), 0.5);
     });
-    out.push('<g>'+nips+'</g>');
+    out.push('<g>'+nipGlow+'</g><g>'+nips+'</g>');
 
     /* ---- valve stem (between two parallel spokes) ---- */
     (function(){
@@ -1361,6 +1368,21 @@
       orient(m, from, to);
       g.add(m); three.spokeMeshes.push(m);
     });
+    /* nipples: short radial barrels seated in the rim bed. Radial rather than
+       along the spoke, matching the 2D drawing and the real part, which sits in
+       the rim's hole while the spoke enters it at the lacing angle. Faceted,
+       since a nipple is a turned hex. */
+    var nipGeo = new THREE.CylinderGeometry(2.0, 2.5, 1, 6);
+    three.nippleMeshes = [];
+    spokes.forEach(function(s,i){
+      var m = new THREE.Mesh(nipGeo, anoMat(state.nippleColors[i] || BLACK,
+        { flatShading:true, emissive:new THREE.Color(0x000000) }));
+      m.castShadow = true;
+      m.userData.i = i;
+      orient(m, v3(RIM_BED - 9, s.rimDeg, 0), v3(RIM_BED + 4, s.rimDeg, 0));
+      g.add(m); three.nippleMeshes.push(m);
+    });
+
     updateSelection3D();
   }
 
@@ -1513,6 +1535,7 @@
   function syncColors3D(){
     if (!three) return;
     three.spokeMeshes.forEach(function(m,i){ m.material.color.set(state.spokeColors[i] || BLACK); });
+    (three.nippleMeshes || []).forEach(function(m,i){ m.material.color.set(state.nippleColors[i] || BLACK); });
     three.hubColorParts.forEach(function(m){ m.material.color.set(state.hubColor); });
     if (three.valveParts) three.valveParts.forEach(function(m){ m.material.color.set(state.valveColor); });
     three.scene.background.set(state.bg);
@@ -1526,7 +1549,11 @@
   }
   function updateSelection3D(){
     if (!three) return;
+    // one selection lights the spoke and its nipple together
     three.spokeMeshes.forEach(function(m,i){
+      m.material.emissive.set(state.selected.has(i) ? 0x1b3a80 : 0x000000);
+    });
+    (three.nippleMeshes || []).forEach(function(m,i){
       m.material.emissive.set(state.selected.has(i) ? 0x1b3a80 : 0x000000);
     });
   }
@@ -1555,10 +1582,12 @@
   function updateHint(){
     var n = state.selected.size;
     hint.className = 'status';
+    var noun = (target && target.id === 'nipples') ? 'nipple' : 'spoke';
     if (n){
-      hint.textContent = n + ' spoke' + (n>1?'s':'') + ' selected — now pick a colour.';
-    } else if (target && target.id === 'spokes'){
-      hint.textContent = 'Pick a colour to apply to every spoke, or click spokes first to choose your own.';
+      hint.textContent = n + ' spoke' + (n>1?'s':'') + ' selected — now pick a colour for the '
+        + noun + (n>1?'s':'') + '.';
+    } else if (target && isPerSpoke(target)){
+      hint.textContent = 'Pick a colour for every ' + noun + ', or click spokes first to choose your own.';
     } else {
       hint.textContent = 'Colouring the ' + (target ? target.label.toLowerCase() : 'wheel') + '.';
     }
@@ -1709,8 +1738,9 @@
   var hexClear = document.getElementById('hexClear');
 
   var TARGETS = [
-    { id:'spokes', label:'Spokes',     colors:SPOKE_HUB_COLORS, ano:true },
-    { id:'hub',    label:'Hub',        colors:SPOKE_HUB_COLORS, ano:true },
+    { id:'spokes', label:'Spokes',     colors:ALLOY_COLORS, ano:true },
+    { id:'nipples',label:'Nipples',    colors:ALLOY_COLORS, ano:true },
+    { id:'hub',    label:'Hub',        colors:ALLOY_COLORS, ano:true },
     { id:'valve',  label:'Valve stem', colors:SPOKEX_COLORS, ano:true },
     { id:'decal',  label:'Rim decal',  colors:SPOKEX_COLORS, ano:true },
     { id:'bg',     label:'Background', colors:BG_COLORS,     ano:false }
@@ -1724,6 +1754,11 @@
      want it available on the hub as well as the spokes. */
   var customColors = [];
   function paletteFor(t){ return t.colors.concat(customColors); }
+  // Spokes and nipples are both indexed per spoke and share one selection, so
+  // a nipple is coloured by selecting its spoke -- there is nothing small to
+  // aim at.
+  function isPerSpoke(t){ return t && (t.id === 'spokes' || t.id === 'nipples'); }
+  function perSpokeList(){ return target.id === 'nipples' ? state.nippleColors : state.spokeColors; }
 
   // accepts #rgb, #rrggbb, or either without the hash; returns #rrggbb lower-case
   function normHex(v){
@@ -1746,8 +1781,8 @@
     if (target.id === 'valve') return state.valveColor;
     if (target.id === 'decal') return state.decalColor;
     if (target.id === 'bg')    return state.bg;
-    var first = state.spokeColors[0];
-    return state.spokeColors.every(function(c){ return c === first; }) ? first : null;
+    var list = perSpokeList(), first = list[0];
+    return list.every(function(c){ return c === first; }) ? first : null;
   }
   function colorName(hex){
     if (!hex) return null;
@@ -1773,13 +1808,15 @@
       // and say "select some spokes first", which is a dead end that teaches
       // nothing. Picking out individual spokes stays available and is what the
       // panel tip and step 3 describe.
+      var list = perSpokeList();
+      var what = target.id === 'nipples' ? 'nipple' : 'spoke';
       var all = state.selected.size === 0;
       var n = all ? state.count : state.selected.size;
-      if (all) { for (var i = 0; i < state.count; i++) state.spokeColors[i] = c.hex; }
-      else state.selected.forEach(function(i){ state.spokeColors[i] = c.hex; });
+      if (all) { for (var i = 0; i < state.count; i++) list[i] = c.hex; }
+      else state.selected.forEach(function(i){ list[i] = c.hex; });
       state.selected.clear();
       refreshSpokes();
-      flash('Applied ' + c.name + ' to ' + (all ? 'all ' : '') + n + ' spoke' + (n > 1 ? 's' : ''), true);
+      flash('Applied ' + c.name + ' to ' + (all ? 'all ' : '') + n + ' ' + what + (n > 1 ? 's' : ''), true);
     }
     renderPalette();
   }
@@ -1802,14 +1839,14 @@
       b.addEventListener('pointerleave', function(){ showReadout(currentValue()); });
       paletteRow.appendChild(b);
     });
-    spokeTools.hidden = target.id !== 'spokes';
+    spokeTools.hidden = !isPerSpoke(target);
     hexClear.hidden = customColors.length === 0;
     showReadout(cur);
   }
 
   targetSel.addEventListener('change', function(){
     target = TARGETS.filter(function(t){ return t.id === targetSel.value; })[0] || TARGETS[0];
-    if (target.id !== 'spokes' && state.selected.size){ state.selected.clear(); refreshSelection(); }
+    if (!isPerSpoke(target) && state.selected.size){ state.selected.clear(); refreshSelection(); }
     renderPalette();
     updateHint();
   });
@@ -1845,7 +1882,7 @@
 
   // clicking a spoke is itself a statement about what you want to colour
   function focusSpokeTarget(){
-    if (target.id === 'spokes') return;
+    if (isPerSpoke(target)) return;      // already colouring spokes or nipples
     target = TARGETS[0]; targetSel.value = 'spokes'; renderPalette();
   }
 
@@ -1859,6 +1896,7 @@
     if (c === state.count) return;
     state.count = c;
     state.spokeColors = freshSpokeColors(c);
+    state.nippleColors = freshNippleColors(c);
     state.selected.clear();
     updateValveDeg();
     tagCache = {};              // both tags are positioned off the valve
@@ -1902,6 +1940,7 @@
   document.getElementById('exportBtn').addEventListener('click', exportJPEG);
   document.getElementById('resetBtn').addEventListener('click', function(){
     state.spokeColors = freshSpokeColors(state.count);
+    state.nippleColors = freshNippleColors(state.count);
     state.selected.clear();
     state.hubColor = DEFAULT_HUB;
     state.valveColor = DEFAULT_HUB;
@@ -1983,11 +2022,15 @@
 
   window.__wheel = {
     state: state, LIGHT: LIGHT, SPOKEX_COLORS: SPOKEX_COLORS,
-    SPOKE_HUB_COLORS: SPOKE_HUB_COLORS,
+    ALLOY_COLORS: ALLOY_COLORS,
     ANO: { lo:ANO_LO, hi:ANO_HI },
     get3D: function(){ return three; },
     setAllSpokes: function(hex){
       for (var i=0;i<state.spokeColors.length;i++) state.spokeColors[i]=hex;
+      refreshSpokes();
+    },
+    setAllNipples: function(hex){
+      for (var i=0;i<state.nippleColors.length;i++) state.nippleColors[i]=hex;
       refreshSpokes();
     },
     applyLight: function(p){
